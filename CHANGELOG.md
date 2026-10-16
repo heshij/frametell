@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- While a film is being made, the workbench's players no longer reload the whole film each time a page starts, finishes or goes round its check again. They reloaded dozens of times during a film, the page you were playing was cut off and stuck near its start, and the browser could slow to a crawl. A player now picks up a new version only when a page has been drawn.
+
 ## [0.7.2] - 2026-10-16
 
 ### Fixed

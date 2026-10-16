@@ -298,6 +298,22 @@ export const clock = (ms: number) => { const s = Math.max(0, Math.round(ms / 100
 export const isWorking = (r: RunView) => (!!r.current && !r.awaitingApproval) || !!r.revising || !!r.exporting || !!r.resuming;
 /** the film is finished (whether or not an mp4 of it exists) */
 export const finished = (r: RunView) => !!r.ready || !!r.video;
+/**
+ * Each page as a player can show it: what it was the last time it was drawn (or given up on), unchanged while it is
+ * being drawn or checked again; a page that settles again after that is a new version even when its round is the same
+ * (a later change starts its rounds again). `seen` is kept by the caller between calls. A player keyed on every status
+ * and round reloaded the whole film each time any page started, finished or went round its check again: dozens of
+ * engine boots while a film was made, and the page playing was cut off each time.
+ */
+export type DrawnSeen = Record<string, { v: string; n: number; away?: boolean }>;
+export const drawnPages = (r: RunView, ids: string[], seen: DrawnSeen = {}) => ids.map((id) => {
+  const p = r.pages[id], s = (seen[id] ??= { v: '', n: 0 });
+  if (p && (p.status === 'ok' || p.status === 'flagged' || p.status === 'failed')) {
+    if (s.away) { s.n++; s.away = false; }
+    s.v = `${p.status}${p.round}#${s.n}`;
+  } else if (s.v) s.away = true;
+  return s.v;
+}).join('|');
 /** where to show an exported file: its copy in the export folder when there is one */
 export const savedAt = (v: NonNullable<RunView['video']>, file: string) => (file === v.path ? v.saved?.withSubs : file === v.noSubs ? v.saved?.noSubs : undefined) ?? file;
 /** the exported mp4, when it shows the film as it is now */

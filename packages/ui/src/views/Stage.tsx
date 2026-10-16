@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Captions, CaptionsOff, Check, ChevronLeft, ChevronRight, Download, Images, Maximize2, MessageSquareText, Quote, TriangleAlert } from 'lucide-react';
 import { client, downloadUrl, type PageTiming, type ProjectView, type Timeline } from '../lib/client';
-import { film, finished, relPath, savedAt, STAGE_NAME, STAGES, type PageView, type RunView } from '../lib/run';
+import { drawnPages, film, finished, relPath, savedAt, STAGE_NAME, STAGES, type DrawnSeen, type PageView, type RunView } from '../lib/run';
 import { shownIssues } from '../lib/lint';
 import { ExportControls, RevealFile } from './Export';
 import { pageName } from '../lib/describe';
@@ -88,6 +88,11 @@ function useLivePlayer(version: string, url: string, from = 0) {
   return { frame, frames, ...st };
 }
 const RETRIES = 4, SILENT_MS = 20_000;
+/** the film as a player shows it: changes when a page is drawn, not each time one starts or goes round its check (drawnPages) */
+function useDrawn(run: RunView, ids: string[]) {
+  const seen = useRef<DrawnSeen>({});
+  return drawnPages(run, ids, seen.current);
+}
 /**
  * The player runs the agent's code, so it is sandboxed. With scripts alone its origin is opaque, and the browser gives
  * an opaque frame a cache of its own each time: every player (every page opened, every return to the film) downloaded
@@ -135,7 +140,7 @@ function Film({ run, project, ids, tl, subs, playKey, takePlay, onFocus }: { run
   const video = useRef<HTMLVideoElement>(null);
   const [vt, setVt] = useState(0);
   // the player picks up a page when it changes, and the film when it is ready again (a new voice changes no page, only the narration)
-  const live = useLivePlayer(ids.map((x) => `${run.pages[x]?.status ?? ''}${run.pages[x]?.round ?? ''}`).join('|') + (run.ready?.at ?? ''), client.fileUrl(project, 'index.html'));
+  const live = useLivePlayer(useDrawn(run, ids) + (run.ready?.at ?? ''), client.fileUrl(project, 'index.html'));
   const frame = live.frame, ft = live.t;
   const okCount = ids.filter((id) => ['ok', 'flagged'].includes(run.pages[id]?.status)).length;
   const cut = film(run);
@@ -348,7 +353,7 @@ function Focus({ id, active: shown, playKey, wantPlay, run, project, ids, tl, on
   const screenBox = useRef<HTMLDivElement>(null);
   const strip = useRef<HTMLDivElement>(null);
   const cueList = useRef<HTMLOListElement>(null);
-  const version = ids.map((x) => `${run.pages[x]?.status ?? ''}${run.pages[x]?.round ?? ''}`).join('|') + (run.ready?.at ?? run.video?.path ?? '');
+  const version = useDrawn(run, ids) + (run.ready?.at ?? run.video?.path ?? '');
   const [light, setLight] = useState<{ kind: 'frames' | 'sheet'; i: number } | null>(null);
   const i = ids.indexOf(id), p = run.pages[id], sb = run.storyboard?.pages.find((x) => x.id === id);
   const lines = linesOf(id, tl, run);
