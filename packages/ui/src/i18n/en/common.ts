@@ -20,6 +20,7 @@ const en: typeof zh = {
     title: 'Not enough credits',
     goAhead: 'Making the film from this storyboard takes about {need} credits, and you have {have}.',
     step: 'This takes about {need} credits and you have {have}, so it didn’t start.',
+    stopped: 'This film ran out of credits part-way and has stopped.',
     back: 'Top up, then come back here to carry on.',
     topUp: 'Top up',
     dismiss: 'Dismiss',

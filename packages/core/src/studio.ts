@@ -284,7 +284,8 @@ export class Studio {
   /** render the finished film to mp4; false when something is running or the film isn't finished */
   export(id: string) { return this.store.runner(id).export(); }
   approve(id: string, feedback?: string) { return this.store.runner(id).approve(feedback); }
-  stop(id: string) { this.store.runner(id).stop(); }
+  /** `why`: the host stopped it for want of credits, so the film says that instead of "paused" */
+  stop(id: string, why?: 'credits') { this.store.runner(id).stop(why); }
   /** a host going away (a sandbox rolled out) stops the film's task without logging a pause: the next host finds it cut
    *  short and carries it on. Settles once the task has wound down */
   halt(id: string): Promise<void> { return this.store.runner(id).halt(); }

@@ -19,6 +19,7 @@ export default {
     title: '积分不够了',
     goAhead: '确认分镜后的制作大约要 {need} 积分，你还有 {have}。',
     step: '这一步大约要 {need} 积分，你还有 {have}，所以没有开始。',
+    stopped: '这部片子做到一半，积分用完了，已经停下。',
     back: '充值后回到这里继续。',
     topUp: '去充值',
     dismiss: '收起',

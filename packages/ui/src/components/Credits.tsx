@@ -110,6 +110,8 @@ export function useShort(project: string, run: RunView) {
   if (refused && (have ?? refused.available) < refused.needed) return { kind: 'step' as const, needed: refused.needed, available: have ?? refused.available };
   const need = film?.goAhead;
   if (run.awaitingApproval && need && have != null && have < need) return { kind: 'goAhead' as const, needed: need, available: have };
+  // the film was stopped part-way for want of credits: said until the balance is topped up
+  if (run.paused?.reason === 'credits' && (have == null || have <= 0)) return { kind: 'stopped' as const, needed: 0, available: have ?? 0 };
   return null;
 }
 
@@ -120,7 +122,7 @@ export function ShortNotice({ project, run }: { project: string; run: RunView })
   const url = hosted?.credits?.url;
   if (!s || !url) return null;
   const fmt = (n: number) => Math.max(0, n).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en-US');
-  const said = t(s.kind === 'goAhead' ? 'common.short.goAhead' : 'common.short.step', { need: fmt(s.needed), have: fmt(s.available) });
+  const said = t(s.kind === 'goAhead' ? 'common.short.goAhead' : s.kind === 'stopped' ? 'common.short.stopped' : 'common.short.step', { need: fmt(s.needed), have: fmt(s.available) });
   return (
     <div className="flex items-start gap-3 border-b border-line bg-seal-soft/50 px-5 py-3 animate-rise" role="alert">
       <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-seal-soft text-seal" aria-hidden><Coins size={13} /></span>

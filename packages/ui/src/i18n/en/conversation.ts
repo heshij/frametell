@@ -26,6 +26,7 @@ const en: typeof zh = {
     whereStage: 'the {stage} step',
     whereHere: 'this point',
     user: 'Paused at {where}.',
+    credits: 'You ran out of credits, so the film stopped at {where}.\nTop up, then Continue: it picks up from here.',
     interrupted: 'Stopped at {where} last time: the app was closed or interrupted.',
     error: 'Stopped at {where} on an error: {msg}',
     unknownError: 'unknown error',
@@ -46,6 +47,12 @@ const en: typeof zh = {
     preparing: 'Getting ready',
     sec: '{n}s',
     wholeAnswer: 'The model hands its answer over only when it’s finished, so nothing shows until then',
+  },
+  kit: {
+    writing: 'Writing this film\'s own components ({n}), for every page to draw with',
+    checking: 'Checking this film\'s components (round {round})',
+    done: '{n} of this film\'s components are ready, the same on every page',
+    failed: 'This film\'s components could not be made; the pages draw everything themselves',
   },
   chapter: {
     aria: 'Step {n}: {stage}',

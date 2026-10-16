@@ -21,7 +21,9 @@ export type FeedItem = In & (
   | { kind: 'tools'; key: string; session: string; calls: ToolCall[]; at: number }
   | { kind: 'user'; key: string; text: string; refs?: UserRef[]; at: number }
   | { kind: 'note'; key: string; text: string; at: number }
-  | { kind: 'paused'; key: string; reason: 'user' | 'interrupted' | 'error'; message?: string; at: number }
+  /** this film's own components being written (one line, shown as the run's `kit` stands now) */
+  | { kind: 'kit'; key: string; at: number }
+  | { kind: 'paused'; key: string; reason: 'user' | 'interrupted' | 'error' | 'credits'; message?: string; at: number }
   | { kind: 'check'; key: string; round: number; reds: number; yellows: number; messages: string[]; at: number }
   | { kind: 'approval'; key: string; storyboard: Storyboard; at: number }
   | { kind: 'pages'; key: string; at: number }
@@ -59,6 +61,8 @@ export interface RunView {
   awaitingApproval: boolean;
   cost?: { amount: number; currency: 'CNY' | 'USD'; usage: Ev<'cost'>['usage'] };
   gate?: Ev<'gate'>;
+  /** this film's own components (written before its pages, for a designed style's longer films) */
+  kit?: { status: Ev<'kit'>['status']; components: string[]; round?: number; sheet?: string };
   video?: { path: string; noSubs: string; duration: number; /** the copies in the export folder */ saved?: { withSubs: string; noSubs: string } };
   /** the film is finished: drawn, checked, playable in the live preview */
   ready?: { duration: number; at: number };
@@ -68,7 +72,7 @@ export interface RunView {
   exporting?: number;
   error?: string;
   /** set while the run is stopped (paused by the user, interrupted, or failed); cleared when it continues */
-  paused?: { reason: 'user' | 'interrupted' | 'error'; message?: string; at: number };
+  paused?: { reason: 'user' | 'interrupted' | 'error' | 'credits'; message?: string; at: number };
   /** continued after a pause and getting ready, since when; cleared when its first step starts (or it stops again) */
   resuming?: number;
   /** the stage that is running now */
@@ -142,6 +146,8 @@ function step(v: RunView, e: LoggedEvent): RunView {
     }
     case 'agent': {
       const ev = e.event;
+      // the film's components are written in the background while it is narrated: one line says how they stand (kit)
+      if (e.session === 'kit') return r;
       const page = isPage(e.session) ? e.session.slice(5) : undefined;
       const who = (doing: string) => (page ? t('run.now.who', { page: pageName(page), doing }) : doing);
       if (ev.type === 'progress') {
@@ -234,6 +240,10 @@ function step(v: RunView, e: LoggedEvent): RunView {
       else if ((r.ready || r.video) && !r.current && !r.exporting && (e.text || e.refs?.some((x) => x.kind !== 'voice'))) { r.revising = at; r.startedAt = at; }
       push({ kind: 'user', key, text: e.text, refs: e.refs, at }); return r;
     case 'note': push({ kind: 'note', key, text: e.text, at }); return r;
+    case 'kit':
+      if (e.status === 'start') push({ kind: 'kit', key, at });
+      r.kit = { status: e.status, components: e.components ?? r.kit?.components ?? [], round: e.round ?? r.kit?.round, sheet: e.sheet ?? r.kit?.sheet };
+      return r;
     case 'paused': {
       // close whatever was running: its timer stops, and the chapter reads as stopped rather than in progress
       r.stages = Object.fromEntries(Object.entries(r.stages).map(([k, s]) => [k, s.status === 'running' ? { ...s, status: 'stopped' as StageStatus, endedAt: at } : s])) as RunView['stages'];

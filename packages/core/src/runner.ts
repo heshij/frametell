@@ -184,6 +184,8 @@ class Runner {
   private subs = new Set<(e: Logged) => void>();
   private seq = 0;
   private abort?: AbortController;
+  /** why the run was stopped, when not by the user (the host: out of credits); said in its paused event */
+  private stopWhy?: 'credits';
   /** this process is going away (a sandbox rolled out): what runs is stopped without a word in the log, and nothing
    *  starts again here. The next process to open the film finds it cut short and carries it on */
   private halted = false;
@@ -335,6 +337,7 @@ class Runner {
     // that the studio's git would then follow
     if (!fs.existsSync(path.join(dir, '.git'))) new Project(dir).initHistory();
     this.abort = new AbortController();
+    this.stopWhy = undefined;
     let finished!: () => void;
     this.task = new Promise<void>((r) => { finished = r; });
     // a paused run that continues says so at once: getting the director ready can take seconds (the model catalog), and
@@ -396,7 +399,7 @@ class Runner {
           next();
           return;
         }
-        if (e.name === 'AbortError' || this.abort?.signal.aborted) { this.status = 'stopped'; this.emit({ type: 'paused', reason: 'user', stage }); }
+        if (e.name === 'AbortError' || this.abort?.signal.aborted) { this.status = 'stopped'; this.emit({ type: 'paused', reason: this.stopWhy ?? 'user', stage }); }
         else { this.status = 'failed'; this.emit({ type: 'error', message: e.message }); this.emit({ type: 'paused', reason: 'error', stage, message: e.message }); }
       })
       .finally(finished);
@@ -409,7 +412,8 @@ class Runner {
     return false;
   }
 
-  stop() { this.abort?.abort(); }
+  /** stop the run; `why`: the host stopped it because the account ran out of credits (said so, not as the user's pause) */
+  stop(why?: 'credits') { this.stopWhy = why; this.abort?.abort(); }
 
   halt(): Promise<void> {
     this.halted = true;

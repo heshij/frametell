@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A film in a designed style (one whose look the director designs for each film) of 8 pages or more now gets its own components before its pages are drawn. The storyboard lists the things the film draws on 3 pages or more (`look.kit`: a map, a globe, a recurring mark), a session writes them once in the film's look as `extras/film-kit.js`, and they are checked on a sheet of their own (lint, determinism and a reviewer). The ones that pass are loaded for every page and listed first in each page's components, so the film shows each thing the same way on every page and no page draws it from nothing. It is written while the film is narrated, so it adds no wait. Once checked, the file is fixed: the agents' write and edit tools refuse it, and a change made any other way is put back before a page is checked. A kit that fails leaves the pages to draw everything themselves, as before.
+
 ### Fixed
+
+- A film a hosted service stops because the account ran out of credits now says so (`paused` with `reason: 'credits'`, from `Studio.stop(id, 'credits')`), with a button to top up beside Continue and the out-of-credits notice at the top of the workbench until the balance is topped up. It used to read as if the user had paused it.
 
 - While a film is being made, the workbench's players no longer reload the whole film each time a page starts, finishes or goes round its check again. They reloaded dozens of times during a film, the page you were playing was cut off and stuck near its start, and the browser could slow to a crawl. A player now picks up a new version only when a page has been drawn.
 

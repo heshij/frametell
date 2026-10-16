@@ -27,6 +27,7 @@ export default {
     whereStage: '「{stage}」这一步',
     whereHere: '这里',
     user: '已在{where}暂停。',
+    credits: '积分用完了，片子停在{where}。\n充值后点「继续制作」，会从这里接着做。',
     interrupted: '上次在{where}停下了：应用被关闭或中断。',
     error: '在{where}出错停下了：{msg}',
     unknownError: '未知错误',
@@ -47,6 +48,12 @@ export default {
     preparing: '准备中',
     sec: '{n} 秒',
     wholeAnswer: '模型会一次写完再交出来，写好前看不到内容',
+  },
+  kit: {
+    writing: '正在写这部片子自己的组件（{n} 个），各页会直接用它们画',
+    checking: '正在检查这部片子的组件（第 {round} 遍）',
+    done: '这部片子的组件写好了 {n} 个，每页都用同一份',
+    failed: '这部片子的组件没写成，各页照常自己画',
   },
   chapter: {
     aria: '第 {n} 步 {stage}',

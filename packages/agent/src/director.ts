@@ -5,13 +5,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { narrate, type TtsProvider } from '@frametell/voice';
 import { Project, childCmd, projectFiles, type LintIssue, type LintKind, type PageTiming, type Storyboard, type Renderer } from './project.js';
-import { FLAG, VERDICT, fixPrompt, langNote, voiceNote, pagePrompt, pageSystem, plannerSystem, replyNote, reviewPrompt, reviewerPrompt, reviewerSystem, scriptPrompt, storyboardFixPrompt, storyboardPrompt, verdictAgain, type Brief, type Problem } from './prompts.js';
+import { FLAG, VERDICT, fixPrompt, kitFixPrompt, kitPrompt, kitReviewNote, kitReviewerPrompt, kitSystem, langNote, voiceNote, pagePrompt, pageSystem, plannerSystem, replyNote, reviewPrompt, reviewerPrompt, reviewerSystem, scriptPrompt, storyboardFixPrompt, storyboardPrompt, verdictAgain, type Brief, type Problem } from './prompts.js';
+import { KIT_CHECK_FILE, KIT_FILE, KIT_KEPT, keepComponents, kitIssues, kitPlan, kitStage, kitTimes, kitWanted, type KitItem } from './kit.js';
 import { addUsage, emptyUsage, type AgentRuntime, type AgentSession, type SessionOptions, type Thinking, type TokenUsage, type TurnResult } from './runtime/types.js';
 import type { PageIssue, PageStatus, Stage, StudioEvent } from './events.js';
 import { designedFonts, designedIssues, designedLook, type Look } from './look.js';
 import { SIGN_OFF_HOLD, signsOff } from './brand.js';
 import { ENGINE_DIR } from '@frametell/engine/tools/project.mjs';
-import { openIn } from './projectfs.js';
+import { freeze, openIn } from './projectfs.js';
 import { briefFile, runResearch, type ResearchLimits } from './research/research.js';
 import type { Sources } from './research/sources.js';
 import type { Web } from './research/web.js';
@@ -81,6 +82,16 @@ interface State {
   spent?: number;
   /** research before the storyboard has run (its brief is in materials/research.md) or was given up */
   research?: 'done' | 'failed';
+  /** this film's own components (kit.ts): written and checked (`components` the ones that passed), given up, or not
+   *  wanted (a style with its own, a short film, nothing that recurs) */
+  kit?: { status: 'done' | 'failed' | 'none'; components: string[] };
+}
+
+/** two pieces of work side by side: both run to the end, and the first failure is thrown once both have */
+async function both(a: Promise<unknown>, b: Promise<unknown>) {
+  const r = await Promise.allSettled([a, b]);
+  const bad = r.find((x): x is PromiseRejectedResult => x.status === 'rejected');
+  if (bad) throw bad.reason;
 }
 
 /** a USD↔CNY rate for adding up a film whose two models are priced in different currencies (rare; an estimate) */
@@ -149,7 +160,7 @@ export function serviceTrouble(text: string): { zh: string; en: string } | undef
 /** a stop (Pause), not a failure */
 const stopped = (e: unknown) => (e as Error)?.name === 'AbortError';
 // pageChecks: a drawn page is checked at most 3 times (2 rounds of fixes); a revision starts from a checked page, 2.
-const MAX = { pageLintMs: 90_000, pagesAtOnce: 10, storyboardFix: 2, scriptFix: 2, planTurns: 30, pageTurns: 40, reviewerTurns: 3, pageChecks: 3, revisionChecks: 2, reviewRounds: 2, reviewDefectsMs: 180_000 };
+const MAX = { pageLintMs: 90_000, pagesAtOnce: 10, storyboardFix: 2, scriptFix: 2, planTurns: 30, pageTurns: 40, reviewerTurns: 3, pageChecks: 3, kitChecks: 3, kitTurns: 30, revisionChecks: 2, reviewRounds: 2, reviewDefectsMs: 180_000 };
 /** the reviewer looks at one sheet and answers: little thinking, quickly */
 const REVIEWER_THINKING: Thinking = 'low';
 /** what breaks a film whatever it looks like: the whole-film check's 'defects' mode takes only these */
@@ -229,7 +240,7 @@ export class Director {
     // same pages again on every Continue
     if (name.startsWith('page-') && this.redraw.has(name.slice(5))) return { runtime: this.o.runtime, prices: this.o.prices };
     if (name.startsWith('check-')) return this.o.reviewer ?? this.o.pages ?? { runtime: this.o.runtime, prices: this.o.prices };
-    return this.o.pages && (name.startsWith('page-') || name === 'review') ? this.o.pages : { runtime: this.o.runtime, prices: this.o.prices };
+    return this.o.pages && (name.startsWith('page-') || name === 'review' || name === 'kit') ? this.o.pages : { runtime: this.o.runtime, prices: this.o.prices };
   }
   private async session(name: string, system: string, maxTurns: number, resume?: string, signal = this.o.signal, tools: Pick<SessionOptions, 'tools' | 'answers'> = {}): Promise<AgentSession> {
     const { runtime, prices } = this.model(name);
@@ -352,7 +363,9 @@ export class Director {
     if (!fonts) return [];
     let look: unknown;
     try { look = this.project.storyboard().look; } catch { return []; }   // an unreadable storyboard is reported already
-    return designedIssues(look, fonts).map((msg) => ({ level: 'red' as const, msg }));
+    let ids: string[] = [];
+    try { ids = this.project.storyboard().pages.map((p) => p.id); } catch {}
+    return [...designedIssues(look, fonts), ...kitIssues(look, ids)].map((msg) => ({ level: 'red' as const, msg }));
   }
 
   /** a designed style's film: the look the director wrote in storyboard.json (its card and what it comes to) */
@@ -365,6 +378,7 @@ export class Director {
   /** Style, voice, pacing and the style's components: owned by the server, re-applied after every agent edit. */
   private serverMeta() {
     const extras = new Set<string>(styleExtras(this.o.style));
+    if (this.state.kit?.status === 'done') extras.add(KIT_FILE);
     try {   // keep components the page agents registered (use-extra.mjs appends to META.extras)
       const m = /extras:\s*(\[[^\]\n]*\])/.exec(this.project.read('script.js'));
       if (m) for (const e of JSON.parse(m[1].replace(/'/g, '"'))) extras.add(e);
@@ -383,6 +397,106 @@ export class Director {
     // a film that ends on its brand's sign-off holds longer after its last line, so the logo is seen in silence
     const signOff = (() => { try { return signsOff(this.o.brief.brand, this.project.storyboard().pages); } catch { return false; } })();
     this.setMeta({ style: this.o.style, lang: this.o.brief.lang ?? 'zh', voice: this.o.voice, gap: 0.8, pace: { maxHold: 1.0, gap: 0.8, ...(signOff ? { tail: SIGN_OFF_HOLD } : {}) }, extras: list, look: this.o.look ?? this.designed()?.look, ...gl });
+  }
+
+  // ── this film's own components (kit.ts) ─────────────────────────────────────────────────────
+  /** the components this film's pages get, as the storyboard listed them */
+  private kitItems(): KitItem[] {
+    if (this.state.kit?.status !== 'done') return [];
+    try { return kitPlan(this.project.storyboard().look).filter((x) => this.state.kit!.components.includes(x.name)); } catch { return []; }
+  }
+  /** the kit file the pages are shown, when this film has one */
+  private filmKit() { return this.state.kit?.status === 'done' ? this.project.file(KIT_FILE) : undefined; }
+  /** the kit as it was checked, put back before a page's check if anything changed it (the agents' file tools cannot:
+   *  it is frozen; a shell can). Pages are drawn side by side, so who changed it can't be told: it is only put back */
+  private keepKit(): boolean {
+    if (this.state.kit?.status !== 'done' || !this.project.exists(KIT_KEPT)) return false;
+    const kept = this.project.read(KIT_KEPT);
+    let now: string | undefined;
+    try { now = this.project.read(KIT_FILE); } catch {}
+    if (now === kept) return false;
+    this.project.write(KIT_FILE, kept);
+    return true;
+  }
+
+  /** the kit's check: its own project (.studio/kit), the check page's timing, and the engine's check of it (lint with
+   *  determinism, and a contact sheet of each component once drawn) */
+  private async checkKit(items: KitItem[], look: unknown, round: number) {
+    const stage = new Project(kitStage(this.o.dir, { style: this.o.style, lang: this.o.brief.lang ?? 'zh', look, items, kit: this.project.read(KIT_FILE), check: this.project.read(KIT_CHECK_FILE) }), undefined, this.o.signal);
+    const page = (await stage.timeline()).pages[0];
+    const times = kitTimes(page.cues, page.end);
+    return { page, times, check: await stage.check('kit', `kit-r${round}`, times, { determinism: true, lintMs: MAX.pageLintMs }) };
+  }
+
+  /**
+   * A designed style's film of many pages: the things its storyboard lists in `look.kit` written once as components
+   * (extras/film-kit.js), checked on a sheet of their own (a project of its own in .studio/kit, so the film's pages and
+   * timing are untouched), and kept to the ones that pass. It never holds the film up: a kit that cannot be had leaves
+   * the pages to draw everything themselves, as before.
+   */
+  async kit() {
+    const sb = this.project.storyboard();
+    const designed = this.designed();
+    const items = kitPlan(sb.look);
+    if (!kitWanted(!!designed, sb.pages.length, items)) { this.state.kit = { status: 'none', components: [] }; this.save(); return; }
+    this.emit({ type: 'kit', status: 'start', components: items.map((x) => x.name) });
+    let s: AgentSession | undefined, reviewer: AgentSession | undefined;
+    let passed: string[] = [], sheet: string | undefined;
+    try {
+      s = await this.session('kit', kitSystem(this.o.style, this.o.brief.styleNotes, designed?.card), MAX.kitTurns);
+      let r = await this.send(s, kitPrompt(sb, items, this.o.brief.lang, this.o.brief.replyLang), undefined, PAGE_THINKING);
+      if (!this.project.exists(KIT_FILE) || !this.project.exists(KIT_CHECK_FILE)) r = await this.send(s, `Write both ${KIT_FILE} and ${KIT_CHECK_FILE}, then stop.`, undefined, PAGE_THINKING);
+      if (!this.project.exists(KIT_FILE) || !this.project.exists(KIT_CHECK_FILE)) throw new Error(r.error || 'the components were not written');
+      for (let round = 1; round <= MAX.kitChecks; round++) {
+        this.emit({ type: 'kit', status: 'checking', round });
+        const { page, times, check: c } = await this.checkKit(items, designed?.look, round);
+        // which component a moment shows: the one whose cue it falls in
+        const at = (t: number) => items[Math.max(0, page.cues.filter((q) => q.abs <= t + page.start + 0.01).length - 1)]?.name;
+        let problems: { name?: string; what: string; fix: string }[] = [], crash: string | undefined;
+        // a kit that throws, or calls what the engine does not have, draws nothing at all: every component fails
+        const broken = c.issues.filter((i) => BROKEN.includes(i.kind));
+        if (c.crash !== undefined || broken.length) { crash = c.crash !== undefined ? crashText(c.crash, 'kit') : broken.map((i) => i.msg).join('\n'); passed = []; }
+        else {
+          sheet = c.sheet;
+          // the sheet is kept with the film's, so the panel can show it
+          try { fs.mkdirSync(this.project.file('out/snap'), { recursive: true }); fs.copyFileSync(c.sheet, this.project.file(`out/snap/kit-r${round}.jpg`)); sheet = this.project.file(`out/snap/kit-r${round}.jpg`); } catch {}
+          reviewer ??= await this.session('check-kit', reviewerSystem(this.o.style, this.o.brief.styleNotes, designed?.card), MAX.reviewerTurns, undefined, undefined, { tools: 'none', answers: [VERDICT] });
+          const v = await this.verdict(reviewer, kitReviewerPrompt(items, times, round), c.sheet);
+          const lint = errorsOf(c.issues).map((i) => ({ name: at(i.local), what: i.msg, fix: 'fix it in the component' }));
+          const seen = (v?.pass === false ? v.problems : []).map((p) => ({ name: items.find((x) => p.what.includes(x.name))?.name ?? at(p.at), what: p.what, fix: p.fix }));
+          problems = [...lint, ...seen];
+          // a problem that names no component (or the whole sheet) holds them all back
+          const failing = new Set(problems.map((p) => p.name));
+          passed = failing.has(undefined) ? [] : items.map((x) => x.name).filter((n) => !failing.has(n));
+          if (!problems.length) break;
+        }
+        if (round === MAX.kitChecks) break;
+        const before = this.project.read(KIT_FILE) + this.project.read(KIT_CHECK_FILE);
+        r = await this.send(s, kitFixPrompt(round, problems, crash), sheet ? [sheet] : undefined, PAGE_THINKING);
+        if (this.project.read(KIT_FILE) + this.project.read(KIT_CHECK_FILE) === before || r.stopReason === 'max_turns') break;
+      }
+    } catch (e) {
+      if (stopped(e)) throw e;
+      passed = [];
+      this.emit({ type: 'kit', status: 'failed', detail: (e as Error).message.slice(0, 400) });
+    } finally {
+      await reviewer?.close();
+      await s?.close();
+    }
+    if (passed.length) {
+      const kept = keepComponents(this.project.read(KIT_FILE), passed);
+      this.project.write(KIT_FILE, kept);
+      fs.mkdirSync(this.project.file('.studio'), { recursive: true });
+      fs.writeFileSync(this.project.file(KIT_KEPT), kept);
+      this.state.kit = { status: 'done', components: passed };
+      freeze(this.o.dir, KIT_FILE);
+      this.emit({ type: 'kit', status: 'done', components: passed, sheet });
+    } else {
+      this.state.kit = { status: 'failed', components: [] };
+      this.emit({ type: 'kit', status: 'failed' });
+    }
+    this.save();
+    await this.commit(this.say('本片组件', "This film's components"));
   }
 
   /** Server-owned META fields, rewritten in place in script.js (the planner must not change them). */
@@ -440,6 +554,9 @@ export class Director {
   async pages(only?: string[]) {
     this.emit({ type: 'stage', stage: 'pages', status: 'start' });
     this.state.stage = 'pages'; this.save();
+    // this film's own components, when it has them: loaded before every page (META.extras), and no page's file tools
+    // may change them
+    if (this.state.kit?.status === 'done') { this.serverMeta(); freeze(this.o.dir, KIT_FILE); }
     const sb = this.project.storyboard();
     const tl = await this.project.timeline();
     const todo = tl.pages.filter((p) => (!only || only.includes(p.id)) && !['ok', 'flagged'].includes(this.state.pages[p.id]?.status ?? ''));
@@ -537,7 +654,7 @@ export class Director {
     this.setPage(id, st);
     let s: AgentSession | undefined;
     try {
-      s = await this.session(`page-${id}`, pageSystem(this.o.style, styleExtras(this.o.style), this.o.brief.preferences, this.o.brief.styleNotes, this.designed()?.card), MAX.pageTurns, was?.ref, undefined, { answers: [FLAG] });
+      s = await this.session(`page-${id}`, pageSystem(this.o.style, styleExtras(this.o.style), this.o.brief.preferences, this.o.brief.styleNotes, this.designed()?.card, this.filmKit()), MAX.pageTurns, was?.ref, undefined, { answers: [FLAG] });
       const fix = this.state.revision?.[id];
       // a revision's page already exists, so "is there a file" says nothing: what tells is whether the code changed
       // (seen: a revision whose edits never landed was checked, passed and shown as done, on the old page)
@@ -566,6 +683,7 @@ export class Director {
       try {
         for (let round = was?.rounds ?? 1; !declined && round <= checks; round++) {
           st.status = 'checking'; st.rounds = round; this.setPage(id, st);
+          this.keepKit();
           const times = this.sheetTimes(sb, t);
           const c = await this.project.check(id, `${id}-r${round}`, times.map((x) => x.t), { determinism: true, lintMs: MAX.pageLintMs });
           checked = code(); issues = c.issues; verdict = undefined;
@@ -581,7 +699,7 @@ export class Director {
           }
           this.setPage(id, { ...st, issues: issues.map(fromLint) }, { sheet: c.sheet });
           const change = unchanged() ? fix : undefined;
-          reviewer ??= await this.session(`check-${id}`, reviewerSystem(this.o.style, this.o.brief.styleNotes, this.designed()?.card), MAX.reviewerTurns, undefined, undefined, { tools: 'none', answers: [VERDICT] });
+          reviewer ??= await this.session(`check-${id}`, reviewerSystem(this.o.style, this.o.brief.styleNotes, this.designed()?.card) + kitReviewNote(this.kitItems()), MAX.reviewerTurns, undefined, undefined, { tools: 'none', answers: [VERDICT] });
           verdict = await this.verdict(reviewer, reviewerPrompt(sb, id, t, round, issues, times, change, this.o.brief.brand), c.sheet);
           const errors = errorsOf(issues), problems = verdict?.pass === false ? verdict.problems : [];
           if (!errors.length && !problems.length) { st.status = 'ok'; st.issues = []; break; }
@@ -649,7 +767,7 @@ export class Director {
     const limit = defectsOnly ? new AbortController() : undefined;
     const timer = limit && setTimeout(() => limit.abort(), MAX.reviewDefectsMs);
     const signal = limit ? AbortSignal.any([limit.signal, ...(this.o.signal ? [this.o.signal] : [])]) : this.o.signal;
-    const s = await this.session('review', pageSystem(this.o.style, styleExtras(this.o.style), this.o.brief.preferences, this.o.brief.styleNotes, this.designed()?.card), MAX.pageTurns, undefined, signal);
+    const s = await this.session('review', pageSystem(this.o.style, styleExtras(this.o.style), this.o.brief.preferences, this.o.brief.styleNotes, this.designed()?.card, this.filmKit()), MAX.pageTurns, undefined, signal);
     let timedOut = false;
     try {
       for (let round = 1; round <= (defectsOnly ? 1 : MAX.reviewRounds); round++) {
@@ -834,7 +952,9 @@ ${this.project.read('script.js')}
     if (this.state.stage === 'storyboard') { await this.research(); await this.storyboard(); }
     if (this.state.stage === 'approval') await this.script(await approve(this.project.storyboard()));
     if (this.state.stage === 'script') await this.script();
-    if (this.state.stage === 'narrate') await this.narrate();
+    // this film's own components are written while it is narrated (they need the storyboard, not the timing)
+    if (this.state.stage === 'narrate') await both(this.narrate(), this.kit());
+    if (this.state.stage === 'pages' && !this.state.kit) await this.kit();   // a run that stopped before its kit was done
     // the voice was changed after the narration was made (while paused): narrate again before going on
     if ((this.state.stage === 'pages' || this.state.stage === 'review') && this.voiceStale()) await this.revoice();
     if (this.state.stage === 'pages') await this.pages();

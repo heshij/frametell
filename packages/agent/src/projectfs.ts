@@ -21,8 +21,9 @@ export interface Reach { engine?: boolean; record?: boolean }
 
 /** why a file was refused; `message` is for the agent */
 export class Refused extends Error {
-  constructor(readonly why: 'outside' | 'record' | 'read-only' | 'link' | 'hard link' | 'not a file', shown: string) {
-    super(why === 'outside' ? `path is outside the project directory: ${shown}`
+  constructor(readonly why: 'outside' | 'record' | 'read-only' | 'frozen' | 'link' | 'hard link' | 'not a file', shown: string) {
+    super(why === 'frozen' ? `cannot change ${shown}: every page of this film uses it, so it is fixed now. Draw what this page needs in the page itself`
+      : why === 'outside' ? `path is outside the project directory: ${shown}`
       : why === 'record' ? `${shown} is the studio's record, not part of the film`
       : why === 'read-only' ? `cannot change ${shown}: the engine directory is read-only`
       : why === 'link' ? `cannot write ${shown}: it is a link`
@@ -36,6 +37,17 @@ export const within = (dir: string, p: string) => { const r = path.relative(dir,
 const fold = (s: string) => (process.platform === 'darwin' || process.platform === 'win32' ? s.toLowerCase() : s);
 const REVISION = path.join('.studio', 'revision.json');
 
+/** files of a project the agents' own writes may not change any more (the studio's own writes, `record`, still may):
+ *  a file every page uses (a film's own components), by the project's real folder */
+const frozen = new Map<string, Set<string>>();
+/** freeze `rel` in the project at `root`: the agents' write and edit tools refuse it from now on */
+export function freeze(root: string, rel: string) {
+  let real: string;
+  try { real = fold(fs.realpathSync(root)); } catch { return; }
+  if (!frozen.has(real)) frozen.set(real, new Set());
+  frozen.get(real)!.add(fold(path.normalize(rel)));
+}
+
 /** null when the real path `real` may be reached under `realRoot`, else why not */
 function place(realRoot: string, real: string, o: Reach & { write?: boolean }): Refused['why'] | null {
   if (within(realRoot, real)) {
@@ -44,6 +56,7 @@ function place(realRoot: string, real: string, o: Reach & { write?: boolean }): 
     const top = fold(rel.split(path.sep)[0]);
     if (top === '.studio' && fold(rel) !== fold(REVISION) && !o.record) return 'record';
     if (o.write && (top === '.git' || top === 'engine' || top === 'engine_modules')) return 'read-only';
+    if (o.write && !o.record && frozen.get(fold(realRoot))?.has(fold(rel))) return 'frozen';
     return null;
   }
   if (!o.write && o.engine && engineRoots().some((d) => within(d, real))) return null;

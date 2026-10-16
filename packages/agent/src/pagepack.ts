@@ -32,8 +32,11 @@ function examplePage(style: string): { id: string; code: string } | undefined {
   return pages.filter((p) => p.code.split('\n').length <= 30).sort((a, b) => (b.code.match(/P\.c\w?\(/g)?.length ?? 0) - (a.code.match(/P\.c\w?\(/g)?.length ?? 0))[0];
 }
 
-export function pagePack(style: string, extras: string[]): string {
+/** `filmKit`: this film's own components (a file of the project, kit.ts), shown first: the things it draws on many pages */
+export function pagePack(style: string, extras: string[], filmKit?: string): string {
   const parts: string[] = ['# This film\'s components and worked example (ready for you)', 'These components are already registered in `META.extras`: call them directly as `P.xxx(...)` in the page. **Don\'t** run use-extra for them again, and don\'t look for their source in engine/.'];
+  const own = filmKit && fs.existsSync(filmKit) ? componentDocs(filmKit) : [];
+  if (own.length) parts.push('## This film\'s own components (film-kit.js)', 'Written for this film, in its look, for the things it draws on many pages. **Whenever the page shows one of these things, draw it with its component**, never by hand: every page must show it the same way. Add to it (labels, highlights, arrows) where the page needs more. Don\'t edit extras/film-kit.js: the other pages use it too.', ...own);
   for (const e of extras) {
     const f = path.join(ENGINE_DIR, e.replace(/^engine\//, ''));
     if (!fs.existsSync(f)) continue;

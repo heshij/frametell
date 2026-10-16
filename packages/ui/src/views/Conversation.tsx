@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronRight, CircleDashed, Clapperboard, Download, Loader2, Pause, Play, TriangleAlert } from 'lucide-react';
+import { ArrowUpRight, Check, ChevronRight, CircleDashed, Clapperboard, Coins, Download, Loader2, Pause, Play, TriangleAlert } from 'lucide-react';
 import { client, downloadUrl, hosted, type ProjectView } from '../lib/client';
 import { clock, film, finished, relPath, shownStages, STAGE_NAME, STAGES, type FeedItem, type PageView, type RunView, type Stage, type Storyboard, isWorking } from '../lib/run';
 import { pageName, stepText, summarizeTools } from '../lib/describe';
@@ -194,22 +194,45 @@ function Pages({ run, onSelect, onPlay, selected }: { run: RunView; onSelect: (i
   );
 }
 
+/** this film's own components: being written and checked, ready (with what each draws), or given up */
+function KitLine({ run }: { run: RunView }) {
+  useT();
+  const k = run.kit;
+  if (!k) return null;
+  const plan = ((run.storyboard?.look as { kit?: { name: string; what: string }[] } | undefined)?.kit ?? []);
+  const what = (n: string) => plan.find((x) => x.name === n)?.what ?? n;
+  if (k.status === 'done') return (
+    <div className="text-[12.5px] leading-relaxed text-ink-2">
+      <p className="flex items-center gap-1.5 text-jade"><Check size={13} aria-hidden /> {t('conversation.kit.done', { n: k.components.length })}</p>
+      <ul className="mt-1 space-y-0.5 text-ink-3">{k.components.map((n) => <li key={n} className="truncate">· {what(n)}</li>)}</ul>
+    </div>
+  );
+  if (k.status === 'failed') return <p className="text-[12.5px] leading-relaxed text-ink-3">{t('conversation.kit.failed')}</p>;
+  return <p className="flex items-center gap-1.5 text-[12.5px] text-accent-ink"><Loader2 size={13} className="animate-spin" aria-hidden /> {t(k.status === 'checking' ? 'conversation.kit.checking' : 'conversation.kit.writing', { n: k.components.length, round: k.round ?? 1 })}</p>;
+}
+
 function PausedCard({ item, run, project, latest }: { item: Extract<FeedItem, { kind: 'paused' }>; run: RunView; project: ProjectView; latest: boolean }) {
   useT();
   const where = item.stage ? t('conversation.paused.whereStage', { stage: STAGE_NAME[item.stage] }) : t('conversation.paused.whereHere');
-  const text = item.reason === 'user' ? t('conversation.paused.user', { where }) : item.reason === 'interrupted' ? t('conversation.paused.interrupted', { where }) : t('conversation.paused.error', { where, msg: item.message ?? t('conversation.paused.unknownError') });
+  const text = item.reason === 'credits' ? t('conversation.paused.credits', { where }) : item.reason === 'user' ? t('conversation.paused.user', { where }) : item.reason === 'interrupted' ? t('conversation.paused.interrupted', { where }) : t('conversation.paused.error', { where, msg: item.message ?? t('conversation.paused.unknownError') });
   const canContinue = latest && !!run.paused;
   // the error's first line says what happened; the lines after it, what to do next
   const [what, ...next] = text.split('\n');
   return (
     <div className="rounded-2xl border border-line bg-surface px-4 py-3.5">
       <p className="flex items-start gap-2 text-[13.5px] leading-relaxed text-ink">
-        {item.reason === 'error' ? <TriangleAlert size={15} className="mt-0.5 shrink-0 text-seal" aria-hidden /> : <Pause size={15} className="mt-0.5 shrink-0 text-ink-3" aria-hidden />}
+        {item.reason === 'error' ? <TriangleAlert size={15} className="mt-0.5 shrink-0 text-seal" aria-hidden /> : item.reason === 'credits' ? <Coins size={15} className="mt-0.5 shrink-0 text-seal" aria-hidden /> : <Pause size={15} className="mt-0.5 shrink-0 text-ink-3" aria-hidden />}
         <span className="min-w-0 break-words">{what}</span>
       </p>
       {next.length > 0 && <p className="ml-[23px] mt-1.5 text-[13px] font-medium leading-relaxed text-ink-2">{next.join(' ')}</p>}
       <p className="ml-[23px] mt-1 text-[12.5px] leading-relaxed text-ink-3">{t('conversation.paused.kept')}</p>
-      {canContinue && <button className="fs-btn fs-btn-accent ml-[23px] mt-3" onClick={() => client.start(project.id).catch(orShort(project.id))}><Play size={14} aria-hidden /> {t('conversation.paused.continue')}</button>}
+      {/* out of credits: topping up comes first, continuing second */}
+      {canContinue && item.reason === 'credits' && hosted?.credits?.url ? (
+        <div className="ml-[23px] mt-3 flex flex-wrap gap-2">
+          <a className="fs-btn fs-btn-accent" href={hosted.credits.url} target="_blank" rel="noopener"><Coins size={14} aria-hidden /> {t('common.short.topUp')}<ArrowUpRight size={13} aria-hidden /></a>
+          <button className="fs-btn fs-btn-secondary" onClick={() => client.start(project.id).catch(orShort(project.id))}><Play size={14} aria-hidden /> {t('conversation.paused.continue')}</button>
+        </div>
+      ) : canContinue && <button className="fs-btn fs-btn-accent ml-[23px] mt-3" onClick={() => client.start(project.id).catch(orShort(project.id))}><Play size={14} aria-hidden /> {t('conversation.paused.continue')}</button>}
     </div>
   );
 }
@@ -381,6 +404,7 @@ function Chapter({ b, run, project, onSelectPage, onPlayPage, selected }: { b: E
         {b.items.map((it) => {
           if (it.kind === 'say') return <Said key={it.key} text={it.text} />;
           if (it.kind === 'note') return <p key={it.key} className="text-[13px] leading-relaxed text-ink-2 animate-rise">{it.text}</p>;
+          if (it.kind === 'kit') return <KitLine key={it.key} run={run} />;
           if (it.kind === 'check') return it.reds + it.yellows === 0
             ? <p key={it.key} className="flex items-center gap-1.5 text-[12.5px] text-jade"><Check size={13} aria-hidden /> {t('conversation.chapter.checkPassed')}</p>
             : <p key={it.key} className="text-[12.5px] leading-relaxed text-ink-3">{t('conversation.chapter.checkIssues', { reds: it.reds, yellows: it.yellows })}</p>;

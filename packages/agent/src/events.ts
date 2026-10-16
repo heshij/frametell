@@ -41,13 +41,17 @@ export type StudioEvent =
   | { type: 'storyboard_check'; round: number; issues: { level: string; page?: string; beat?: number; msg: string }[] }
   /** the storyboard passed its checks and waits for the user (in CLI runs it is approved automatically) */
   | { type: 'approval'; storyboard: Storyboard }
+  /** this film's own components (kit.ts), written before its pages: `components` the ones the pages get, `sheet` the
+   *  check's contact sheet */
+  | { type: 'kit'; status: 'start' | 'checking' | 'done' | 'failed'; components?: string[]; round?: number; sheet?: string; detail?: string }
   | { type: 'page'; id: string; status: PageStatus; round?: number; issues?: PageIssue[]; sheet?: string; thumb?: string; note?: string }
   /** something the user said to the director (approval feedback, a note while it works, a change after the film) */
   | { type: 'user'; text: string; refs?: UserRef[] }
   /** a short line from the director that isn't a model message: how a user note will be handled, what a revision redraws */
   | { type: 'note'; text: string }
-  /** the run stopped: the user paused, the app was closed mid-run, or an error; completed work is kept */
-  | { type: 'paused'; reason: 'user' | 'interrupted' | 'error'; stage?: string; message?: string }
+  /** the run stopped: the user paused, the app was closed mid-run, an error, or (a hosted service) the account ran out
+   *  of credits; completed work is kept */
+  | { type: 'paused'; reason: 'user' | 'interrupted' | 'error' | 'credits'; stage?: string; message?: string }
   /** a paused run was continued; its next step follows once the director is ready */
   | { type: 'resumed' }
   | { type: 'narrate'; page: string; index: number; total: number; cached: boolean }
