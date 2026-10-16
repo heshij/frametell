@@ -16,6 +16,7 @@ import { locale, tr } from '@frametell/core';
 const ENV_KEYS: Record<string, string> = {
   anthropic: 'ANTHROPIC_API_KEY', openai: 'OPENAI_API_KEY', google: 'GEMINI_API_KEY',
   openrouter: 'OPENROUTER_API_KEY', 'vercel-ai-gateway': 'AI_GATEWAY_API_KEY', deepseek: 'DEEPSEEK_API_KEY', 'volcengine-ark': 'VOLCENGINE_ARK_API_KEY',
+  'opencode-go': 'OPENCODE_API_KEY',
 };
 
 function args(argv: string[]) {

@@ -15,3 +15,4 @@ apps/desktop/release/
 
 # design-review scratch files carry local paths
 .impeccable/critique/
+.idea

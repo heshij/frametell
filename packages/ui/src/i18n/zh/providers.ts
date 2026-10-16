@@ -3,13 +3,13 @@ export default {
   list: '服务商',
   group: { recommended: '推荐', global: '海外', china: '国内', local: '本地', custom: '自定义' },
   name: {
-    anthropic: 'Claude', openai: 'OpenAI', google: 'Gemini', xai: 'Grok', openrouter: 'OpenRouter',
+    anthropic: 'Claude', openai: 'OpenAI', google: 'Gemini', xai: 'Grok', openrouter: 'OpenRouter', 'opencode-go': 'OpenCode Go',
     deepseek: 'DeepSeek', 'moonshotai-cn': 'Kimi', zhipu: '智谱 GLM', qwen: '通义千问', 'minimax-cn': 'MiniMax', siliconflow: '硅基流动',
     'volcengine-ark': '豆包', hunyuan: '腾讯混元', xiaomi: '小米 MiMo', ollama: 'Ollama',
   },
   blurb: {
     anthropic: 'Anthropic 官方 API', openai: 'OpenAI 官方 API', google: 'Google AI Studio',
-    xai: 'xAI 官方 API', openrouter: '一个 key 接入几百个模型', deepseek: '深度求索开放平台', 'moonshotai-cn': '月之暗面开放平台', zhipu: '智谱 AI 开放平台',
+    xai: 'xAI 官方 API', openrouter: '一个 key 接入几百个模型', 'opencode-go': 'OpenCode 的低价订阅网关', deepseek: '深度求索开放平台', 'moonshotai-cn': '月之暗面开放平台', zhipu: '智谱 AI 开放平台',
     qwen: '阿里云百炼', 'minimax-cn': 'MiniMax 开放平台', siliconflow: '开源模型一站式 API', 'volcengine-ark': '火山方舟', hunyuan: '腾讯云混元大模型',
     xiaomi: '小米 MiMo 开放平台', ollama: '本机运行的开源模型，不需要 key',
   },

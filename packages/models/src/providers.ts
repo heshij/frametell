@@ -33,6 +33,10 @@ export const PROVIDERS: ProviderSpec[] = [
   { id: 'google', site: 'https://ai.google.dev', name: 'Gemini', group: 'global', blurb: 'Google AI Studio', keyUrl: 'https://aistudio.google.com/apikey', keyHint: 'AIza…', protocol: 'google', baseUrl: 'https://generativelanguage.googleapis.com/v1beta' },
   { id: 'xai', site: 'https://x.ai', name: 'Grok', group: 'global', blurb: 'The xAI API', keyUrl: 'https://console.x.ai', keyHint: 'xai-…', protocol: 'openai', baseUrl: 'https://api.x.ai/v1' },
   { id: 'openrouter', site: 'https://openrouter.ai', name: 'OpenRouter', group: 'global', blurb: 'One key for hundreds of models', keyUrl: 'https://openrouter.ai/keys', keyHint: 'sk-or-…', protocol: 'openai', baseUrl: 'https://openrouter.ai/api/v1' },
+  // Pi's own provider (not a compat one): it wraps every API with OpenCode's required x-opencode-session header,
+  // which Pi fills from the session id our runtime already passes. Registering it as compat would replace that
+  // wrapper with a bare OpenAI client and every request would come back MissingSessionID.
+  { id: 'opencode-go', site: 'https://opencode.ai', name: 'OpenCode Go', group: 'global', blurb: 'OpenCode’s low-cost subscription gateway', keyUrl: 'https://opencode.ai/auth', keyHint: 'API Key', protocol: 'openai', baseUrl: 'https://opencode.ai/zen/go/v1' },
   { id: 'deepseek', site: 'https://platform.deepseek.com', name: 'DeepSeek', group: 'china', blurb: 'DeepSeek Open Platform', keyUrl: 'https://platform.deepseek.com/api_keys', keyHint: 'sk-…', protocol: 'openai', baseUrl: 'https://api.deepseek.com' },
   { id: 'moonshotai-cn', site: 'https://platform.moonshot.cn', name: 'Kimi', group: 'china', blurb: 'Moonshot AI Open Platform', keyUrl: 'https://platform.moonshot.cn/console/api-keys', keyHint: 'sk-…', protocol: 'openai', baseUrl: 'https://api.moonshot.cn/v1' },
   { id: 'zhipu', site: 'https://open.bigmodel.cn', name: 'Zhipu GLM', group: 'china', blurb: 'Zhipu AI Open Platform', keyUrl: 'https://open.bigmodel.cn/usercenter/apikeys', keyHint: 'API Key', protocol: 'openai', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', compat: true },

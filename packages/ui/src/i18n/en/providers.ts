@@ -4,13 +4,13 @@ const en: typeof zh = {
   list: 'Providers',
   group: { recommended: 'Recommended', global: 'Global', china: 'China', local: 'Local', custom: 'Your own' },
   name: {
-    anthropic: 'Claude', openai: 'OpenAI', google: 'Gemini', xai: 'Grok', openrouter: 'OpenRouter',
+    anthropic: 'Claude', openai: 'OpenAI', google: 'Gemini', xai: 'Grok', openrouter: 'OpenRouter', 'opencode-go': 'OpenCode Go',
     deepseek: 'DeepSeek', 'moonshotai-cn': 'Kimi', zhipu: 'Zhipu GLM', qwen: 'Qwen', 'minimax-cn': 'MiniMax', siliconflow: 'SiliconFlow',
     'volcengine-ark': 'Doubao', hunyuan: 'Tencent Hunyuan', xiaomi: 'Xiaomi MiMo', ollama: 'Ollama',
   },
   blurb: {
     anthropic: 'The Anthropic API', openai: 'The OpenAI API', google: 'Google AI Studio',
-    xai: 'The xAI API', openrouter: 'One key for hundreds of models', deepseek: 'DeepSeek Open Platform', 'moonshotai-cn': 'Moonshot AI Open Platform', zhipu: 'Zhipu AI Open Platform',
+    xai: 'The xAI API', openrouter: 'One key for hundreds of models', 'opencode-go': 'OpenCode’s low-cost subscription gateway', deepseek: 'DeepSeek Open Platform', 'moonshotai-cn': 'Moonshot AI Open Platform', zhipu: 'Zhipu AI Open Platform',
     qwen: 'Alibaba Cloud Model Studio', 'minimax-cn': 'MiniMax Open Platform', siliconflow: 'Open models, one API', 'volcengine-ark': 'Volcengine Ark', hunyuan: 'Tencent Cloud Hunyuan',
     xiaomi: 'Xiaomi MiMo Open Platform', ollama: 'Open models running on this computer; no key',
   },
