@@ -11,11 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A film in a designed style (one whose look the director designs for each film) of 8 pages or more now gets its own components before its pages are drawn. The storyboard lists the things the film draws on 3 pages or more (`look.kit`: a map, a globe, a recurring mark), a session writes them once in the film's look as `extras/film-kit.js`, and they are checked on a sheet of their own (lint, determinism and a reviewer). The ones that pass are loaded for every page and listed first in each page's components, so the film shows each thing the same way on every page and no page draws it from nothing. It is written while the film is narrated, so it adds no wait. Once checked, the file is fixed: the agents' write and edit tools refuse it, and a change made any other way is put back before a page is checked. A kit that fails leaves the pages to draw everything themselves, as before.
 
+- An exported film opens on a cover instead of a blank stage. Its first frame is a page at rest (the moment its thumbnail is cut), so a chat app or a file browser that shows a video by its first frame shows a picture; one frame of it is not seen when the film plays. It is the first page unless another is chosen: "Cover" beside the workbench's export button lists the film's pages to pick from (`Studio.setCover(id, page)`, saved as `cover.json` in the project, a `cover` event). Choosing another cover marks an mp4 already made out of date, and the next export draws only the film's first segment again.
+
 ### Fixed
 
 - A film a hosted service stops because the account ran out of credits now says so (`paused` with `reason: 'credits'`, from `Studio.stop(id, 'credits')`), with a button to top up beside Continue and the out-of-credits notice at the top of the workbench until the balance is topped up. It used to read as if the user had paused it.
 
 - While a film is being made, the workbench's players no longer reload the whole film each time a page starts, finishes or goes round its check again. They reloaded dozens of times during a film, the page you were playing was cut off and stuck near its start, and the browser could slow to a crawl. A player now picks up a new version only when a page has been drawn.
+
+- The preview no longer shakes at the start of a page when a line's audio gets stuck. A line whose file came without a length or byte ranges (a hosted film's files sometimes do while it is being made) could be told to play and never finish seeking; the picture kept to that line all the same and was pulled back to its start every few frames. A line now leads the picture only while it is playing. A stuck line holds the picture, is fetched again after 1.5 s, and is skipped after 4 s, so the film plays on.
 
 ## [0.7.2] - 2026-10-16
 

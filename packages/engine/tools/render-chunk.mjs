@@ -1,5 +1,6 @@
 // Renders frames [f0, f1) at FPS to an mp4 chunk. Usage (from a project dir): node engine/tools/render-chunk.mjs <f0> <f1> <fps> <out.mp4>
-//   or: render-chunk.mjs --jobs <list.json> <fps> — several chunks [{ a, b, out }] in one browser, one after another
+//   or: render-chunk.mjs --jobs <list.json> <fps> — several chunks [{ a, b, out, cover? }] in one browser, one after
+//   another; `cover`: the time drawn as the chunk's first frame instead of its own (the film's cover, render.mjs)
 // HW=1 (render.mjs --hw): encode on the machine's media engine (the Mac's, or an NVIDIA card's) so every CPU core is left
 // for the browsers. JPEG_QUALITY (render.mjs --jpeg-quality): how frames come out of Chrome; 92 by default.
 // A browser that stops answering exits with STALLED (3) instead of waiting for ever; render.mjs draws that share again.
@@ -42,7 +43,7 @@ const grab = async () => Buffer.from((await cdp.send('Page.captureScreenshot', {
 // veryfast: x264 at 'medium' took the CPU the browsers need to draw frames; at CRF 16 the difference does not show
 const enc = process.env.HW === '1' ? [...HW_ENCODE, ...(process.platform === 'darwin' ? ['-realtime', '0'] : [])] : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16'];
 let code = 0;
-for (const { a: f0, b: f1, out } of jobs) {
+for (const { a: f0, b: f1, out, cover } of jobs) {
   const ff = spawn(FFMPEG, ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(fps), '-c:v', 'mjpeg', '-i', '-',
     ...enc, '-pix_fmt', 'yuv420p', '-r', String(fps), '-f', 'mp4', out], { stdio: ['pipe', 'inherit', 'inherit'] });
   // an encoder that quits takes no more frames: stop drawing for it, and never wait on a pipe it will not drain
@@ -52,7 +53,7 @@ for (const { a: f0, b: f1, out } of jobs) {
   for (let f = f0; f < f1 && ff.exitCode === null; f++) {
     // window.__frameReady (optional, set by an episode's extras): wait until everything this frame needs (e.g. images) is ready
     const buf = await within((async () => {
-      await page.evaluate(async (t) => { ENGINE.renderAt(t); if (window.__frameReady) await window.__frameReady(t); }, f / fps);
+      await page.evaluate(async (t) => { ENGINE.renderAt(t); if (window.__frameReady) await window.__frameReady(t); }, f === f0 && cover !== undefined ? cover : f / fps);
       return grab();
     })(), FRAME_MS, `frame ${f} (${(f / fps).toFixed(2)}s) was not drawn in ${FRAME_MS / 1000}s: the browser stopped answering`).catch(stalled);
     if (!ff.stdin.write(buf)) await Promise.race([new Promise((r) => ff.stdin.once('drain', r)), closed]);

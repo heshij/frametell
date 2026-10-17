@@ -482,3 +482,33 @@ test('a halted run stops at once and logs nothing; the host that opens the film 
     assert.ok(again.some((e) => e.type === 'stage' && e.stage === 'render' && e.status === 'failed'), 'the export is found cut short');
   } finally { for (const f of off) f(); fs.rmSync(dataDir, { recursive: true, force: true }); }
 });
+
+test('a film\'s cover is chosen in cover.json: an mp4 made before is out of date, the first page clears it, a link is never read', () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'frametell-cover-'));
+  try {
+    const id = '2026-10-17-cover0000001', dir = path.join(dataDir, 'projects', id), now = new Date().toISOString();
+    fs.mkdirSync(path.join(dir, '.studio'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.studio', 'project.json'), JSON.stringify({ id, title: id, style: 'whiteboard', durationSec: 60, model: 'nowhere/none', runtime: 'pi', subtitles: true, materials: [], createdAt: now, updatedAt: now }));
+    fs.writeFileSync(path.join(dir, '.studio', 'state.json'), JSON.stringify({ stage: 'done', video: path.join(dir, 'out', 'v-有字幕.mp4'), exported: true }));
+    const studio = new Studio({ dataDir, config: memoryConfig() });
+    const seen: { type: string; page?: string | null }[] = [];
+    const off = studio.subscribe(id, 0, (e) => seen.push(e as never));
+    assert.equal(studio.project(id).cover, undefined);
+    assert.equal(studio.project(id).stale, false);
+    assert.equal(studio.setCover(id, 'p03'), true);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'cover.json'), 'utf8')), { page: 'p03' });
+    assert.equal(studio.project(id).cover, 'p03');
+    assert.equal(studio.project(id).stale, true);
+    assert.equal(studio.setCover(id, '../x'), false);
+    // the first page again: no file, and a host keeping the events itself hears nothing here
+    assert.equal(studio.setCover(id, null, { log: false }), true);
+    assert.ok(!fs.existsSync(path.join(dir, 'cover.json')));
+    assert.deepEqual(seen.filter((e) => e.type === 'cover').map((e) => e.page), ['p03']);
+    // a cover.json that links out is not followed
+    const outside = path.join(dataDir, 'secret.json');
+    fs.writeFileSync(outside, JSON.stringify({ page: 'p09' }));
+    fs.symlinkSync(outside, path.join(dir, 'cover.json'));
+    assert.equal(studio.project(id).cover, undefined);
+    off();
+  } finally { fs.rmSync(dataDir, { recursive: true, force: true }); }
+});

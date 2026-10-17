@@ -283,6 +283,9 @@ export class Studio {
   }
   /** render the finished film to mp4; false when something is running or the film isn't finished */
   export(id: string) { return this.store.runner(id).export(); }
+  /** the page the exported film opens on (its first frame); null: the first page. False while the film is being made.
+   *  `log: false`: no `cover` event (a host that keeps the film's events itself logs it) */
+  setCover(id: string, page: string | null, o?: { log?: boolean }) { this.store.read(id); return this.store.runner(id).setCover(page, o); }
   approve(id: string, feedback?: string) { return this.store.runner(id).approve(feedback); }
   /** `why`: the host stopped it for want of credits, so the film says that instead of "paused" */
   stop(id: string, why?: 'credits') { this.store.runner(id).stop(why); }

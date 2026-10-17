@@ -4,6 +4,7 @@ import { client, downloadUrl, type PageTiming, type ProjectView, type Timeline }
 import { drawnPages, film, finished, relPath, savedAt, STAGE_NAME, STAGES, type DrawnSeen, type PageView, type RunView } from '../lib/run';
 import { shownIssues } from '../lib/lint';
 import { ExportControls, RevealFile } from './Export';
+import { CoverPicker } from './Cover';
 import { pageName } from '../lib/describe';
 import { Lightbox } from './Lightbox';
 import { clip, type Ref } from '../lib/refs';
@@ -561,16 +562,17 @@ export function Stage({ run, project, selected, onSelect, playKey, pagePlay, onR
   return (
     <div className="flex h-full min-h-0 flex-col">
       {!focused && (
-        <div className="flex items-center gap-3 px-5 pt-4">
-          <div className="flex rounded-lg bg-ink/[0.05] p-0.5" role="tablist" aria-label={tr('stage.viewTabs')}>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 pt-4">
+          <div className="flex shrink-0 rounded-lg bg-ink/[0.05] p-0.5" role="tablist" aria-label={tr('stage.viewTabs')}>
             {([['film', tr('stage.film')], ['pages', tr('stage.pages', { n: ids.length })]] as const).map(([k, l]) => (
               <button key={k} role="tab" aria-selected={view === k} onClick={() => setView(k)}
-                className={`rounded-md px-3 py-1 text-[12.5px] font-medium transition-colors ${view === k ? 'bg-surface text-ink shadow-sm' : 'text-ink-3 hover:text-ink'}`}>{l}</button>
+                className={`whitespace-nowrap rounded-md px-3 py-1 text-[12.5px] font-medium transition-colors ${view === k ? 'bg-surface text-ink shadow-sm' : 'text-ink-3 hover:text-ink'}`}>{l}</button>
             ))}
           </div>
-          {!cut && finished(run) && <span className="ml-auto flex items-center gap-2"><span className="hidden text-[12px] text-ink-3 md:inline">{run.stale ? tr('stage.revisedPreview') : tr('stage.livePreview')}</span><ExportControls run={run} project={project} size="fs-btn-sm" /></span>}
+          {!cut && finished(run) && <span className="ml-auto flex flex-wrap items-center justify-end gap-2"><span className="hidden text-[12px] text-ink-3 md:inline">{run.stale ? tr('stage.revisedPreview') : tr('stage.livePreview')}</span><CoverPicker run={run} project={project} ids={ids} tl={tl} size="fs-btn-sm" /><ExportControls run={run} project={project} size="fs-btn-sm" /></span>}
           {cut && (
-            <span className="ml-auto flex items-center gap-1.5">
+            <span className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
+              <CoverPicker run={run} project={project} ids={ids} tl={tl} size="fs-btn-sm" />
               <button className="fs-btn fs-btn-ghost fs-btn-sm" aria-pressed={subs} onClick={() => setSubs(!subs)} title={subs ? tr('stage.subsOnTitle') : tr('stage.subsOffTitle')}>
                 {subs ? <Captions size={14} aria-hidden /> : <CaptionsOff size={14} aria-hidden />}{subs ? tr('stage.subsOn') : tr('stage.subsOff')}
               </button>

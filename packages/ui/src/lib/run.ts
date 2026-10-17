@@ -66,8 +66,10 @@ export interface RunView {
   video?: { path: string; noSubs: string; duration: number; /** the copies in the export folder */ saved?: { withSubs: string; noSubs: string } };
   /** the film is finished: drawn, checked, playable in the live preview */
   ready?: { duration: number; at: number };
-  /** the exported mp4 is older than the film (a revision changed it since) */
+  /** the exported mp4 is older than the film (a revision, or another cover, changed it since) */
   stale?: boolean;
+  /** the page the exported film opens on, when one other than the first was chosen */
+  cover?: string;
   /** an mp4 export in progress, since when */
   exporting?: number;
   error?: string;
@@ -272,6 +274,11 @@ function step(v: RunView, e: LoggedEvent): RunView {
       r.revising = undefined;
       r.current = undefined;
       push({ kind: 'ready', key, duration: e.duration, at });
+      return r;
+    // another cover chosen: an mp4 made before opens on the old one
+    case 'cover':
+      r.cover = e.page ?? undefined;
+      if (r.video) r.stale = true;
       return r;
     case 'done': {
       r.resuming = undefined;

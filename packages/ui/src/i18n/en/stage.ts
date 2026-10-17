@@ -65,6 +65,15 @@ const en: typeof zh = {
     next: 'Next',
     hint: 'Click to zoom · Drag to pan · Scroll to zoom · ←/→ to switch · Esc to close',
   },
+  cover: {
+    button: 'Cover · page {n}',
+    title: 'Choose the cover of the exported video',
+    heading: 'Video cover',
+    hint: 'The exported video opens on this page, so chats and file browsers show it instead of a blank first frame.',
+    default: 'Default',
+    reexport: 'Videos already exported keep the old cover. Export again to apply it (only the first seconds are redrawn).',
+    failed: 'The cover could not be changed while the film is being made or exported. Try again in a moment.',
+  },
 };
 
 export default en;

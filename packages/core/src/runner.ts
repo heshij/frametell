@@ -7,7 +7,7 @@ import crypto from 'node:crypto';
 import { createProject, linkProject } from '@frametell/engine/tools/project.mjs';
 import { createCatalog } from '@frametell/models';
 import { elevenLabsTts, volcengineTts } from '@frametell/voice';
-import { createWeb, Director, findSources, hasSources, offlineWeb, piRuntime, Project, type AgentRuntime, type DirectorOptions, type Renderer, type StudioEvent, type Storyboard, type UserRef } from '@frametell/agent';
+import { createWeb, Director, findSources, hasSources, offlineWeb, openProjectFile, piRuntime, Project, readFd, writeIn, type AgentRuntime, type DirectorOptions, type Renderer, type StudioEvent, type Storyboard, type UserRef } from '@frametell/agent';
 import type { Config, ConfigStore } from './config.js';
 import { prepareMaterials } from './materials.js';
 import { applyProxy } from './net.js';
@@ -258,7 +258,38 @@ class Runner {
     const st = studioFile(this.dir, 'state.json');
     const s = fs.existsSync(st) ? JSON.parse(fs.readFileSync(st, 'utf8')) : {};
     const status: RunStatus = this.status !== 'running' && heldElsewhere(this.dir) ? 'running' : this.status;
-    return { status, stage: s.stage as string | undefined, video: s.video ? path.relative(this.dir, s.video) : undefined, stale: s.video ? s.exported === false : undefined };
+    const cover = this.cover();
+    return { status, stage: s.stage as string | undefined, video: s.video ? path.relative(this.dir, s.video) : undefined, stale: s.video ? s.exported === false : undefined, ...(cover ? { cover } : {}) };
+  }
+
+  /** the page chosen as the film's cover (cover.json, read through the project's own files only); absent: the first */
+  cover(): string | undefined {
+    const f = openProjectFile(this.dir, 'cover.json');
+    if (!f) return undefined;
+    try { const page = JSON.parse(readFd(f.fd).toString('utf8')).page; return typeof page === 'string' && /^[\w-]{1,40}$/.test(page) ? page : undefined; }
+    catch { return undefined; }
+    finally { fs.closeSync(f.fd); }
+  }
+
+  /**
+   * Choose the page the exported film opens on (its first frame, what a chat app or a file browser shows of it); null
+   * goes back to the first page. An mp4 already made shows the old cover: it is marked out of date, and the next export
+   * draws only the film's first segment again. False while the film is being made.
+   */
+  setCover(page: string | null, o: { log?: boolean } = {}): boolean {
+    if (this.status === 'running' || heldElsewhere(this.dir)) return false;
+    if (page !== null && !/^[\w-]{1,40}$/.test(page)) return false;
+    if ((page ?? undefined) === this.cover()) return true;
+    if (page === null) fs.rmSync(path.join(this.dir, 'cover.json'), { force: true });
+    else writeIn(this.dir, 'cover.json', JSON.stringify({ page }) + '\n');
+    const st = studioFile(this.dir, 'state.json');
+    try {
+      const s = JSON.parse(fs.readFileSync(st, 'utf8'));
+      if (s.video && s.exported !== false) { s.exported = false; writeIn(this.dir, '.studio/state.json', JSON.stringify(s, null, 2), { record: true }); }
+    } catch { /* no state yet */ }
+    // a host that keeps the film's events itself (the run is elsewhere) logs it there instead
+    if (o.log !== false) this.emit({ type: 'cover', page });
+    return true;
   }
 
   private emit = (e: StudioEvent) => {

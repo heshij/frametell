@@ -68,7 +68,8 @@ export interface ProjectMeta {
   group?: string;
 }
 /** `stale`: the exported mp4 is older than the film (a revision changed it since); the preview shows the film as it is */
-export interface ProjectSummary extends ProjectMeta { status: RunStatus; stage?: string; video?: string; stale?: boolean }
+/** `cover`: the page the exported film opens on (its first frame), when one other than the first was chosen */
+export interface ProjectSummary extends ProjectMeta { status: RunStatus; stage?: string; video?: string; stale?: boolean; cover?: string }
 
 export interface NewProjectInput {
   title?: string;

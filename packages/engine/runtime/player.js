@@ -21,25 +21,34 @@
     // seconds are loaded in advance; the clock holds at a line that cannot play yet (at most WAIT_MS); a line plays out
     // to its own end; and while one plays, the clock keeps to it (more than DRIFT off, e.g. after frames stalled in a
     // background tab, the picture moves, never the sound: seeking a playing line is itself an audible jolt).
-    const AHEAD = 15, WAIT_MS = 4000, DRIFT = 0.12;
+    // A line can also be stuck after it was told to play: its file came without a length or byte ranges (a running film's
+    // box, behind its proxy, sometimes answers so), and a seek in it never ends. Such a line used to lead the clock all
+    // the same: the picture was pulled back to its stuck time every few frames and shook at the start of the page. Now a
+    // line leads only while it flows; a stuck one holds the clock, is fetched again after RETRY_MS, and is given up at WAIT_MS.
+    const AHEAD = 15, WAIT_MS = 4000, RETRY_MS = 1500, DRIFT = 0.12;
     const clips = ENGINE.layout.pages.flatMap((p) => p.cues).filter((c) => c.audio)
-      .map((c) => ({ at: c.audioAt ?? c.start, d: c.dur ?? c.end - c.start, src: c.audio, el: null, done: false, since: 0 }));
+      .map((c) => ({ at: c.audioAt ?? c.start, d: c.dur ?? c.end - c.start, src: c.audio, el: null, done: false, since: 0, fresh: false }));
     const audioOf = (c) => {
       if (!c.el) {
-        c.el = new Audio(c.src); c.el.preload = 'auto';
-        c.el.addEventListener('ended', () => { c.done = true; });
-        c.el.addEventListener('error', () => { c.done = true; });   // a line that will not load does not hold the film
+        const el = (c.el = new Audio(c.src)); el.preload = 'auto';
+        el.addEventListener('ended', () => { if (c.el === el) c.done = true; });
+        el.addEventListener('error', () => { if (c.el === el) c.done = true; });   // a line that will not load does not hold the film
       }
       return c.el;
     };
+    /** drop a line's element: the next one asks for the file again */
+    const forget = (c) => { const el = c.el; c.el = null; if (el) { el.pause(); el.removeAttribute('src'); el.load(); } };
+    /** the line can play on from where it is: not mid-seek, and loaded ahead of its own time */
+    const flowing = (el) => !el.seeking && el.readyState >= 3;
     const loadAhead = () => { for (const c of clips) if (c.at + c.d > t && c.at < t + AHEAD) audioOf(c); };
-    /** a line due by `to` that has not started and cannot play yet: the clock waits for it */
+    /** a line due by `to` that cannot play yet (not loaded, or stuck since it was started): the clock waits for it */
     const holding = (to, now) => clips.find((c) => {
       if (c.done || to < c.at || t >= c.at + c.d) return false;
       const el = audioOf(c);
-      if (!el.paused || el.readyState >= 3) return false;
+      if (flowing(el)) { c.since = 0; return false; }
       if (!c.since) c.since = now;
-      if (now - c.since > WAIT_MS) { c.done = true; return false; }
+      if (now - c.since > WAIT_MS) { forget(c); c.done = true; return false; }
+      if (now - c.since > RETRY_MS && !c.fresh && !el.paused) { c.fresh = true; forget(c); audioOf(c); }
       return true;
     });
     const sfx = TIMING.sfxTimes ? TIMING.sfxTimes(ENGINE.layout).map((s) => ({ ...s, el: null })) : [];
@@ -114,7 +123,7 @@
       if (!playing) return;
       let next = Math.min(dur, wall + (now - t0) / 1000);
       const wait = holding(next, now);
-      const lead = !wait && clips.findLast((c) => c.el && !c.el.paused);
+      const lead = !wait && clips.findLast((c) => c.el && !c.el.paused && flowing(c.el));
       if (wait) { next = Math.max(t, wait.at); wall = next; t0 = now; }
       else if (lead && Math.abs(lead.at + lead.el.currentTime - next) > DRIFT) { next = Math.min(dur, lead.at + lead.el.currentTime); wall = next; t0 = now; }
       t = next;
@@ -139,7 +148,7 @@
     const toggle = () => (playing ? pause() : play());
     const jump = (to) => {
       t = Math.max(0, Math.min(dur, to)); wall = t; t0 = performance.now();
-      for (const c of clips) { c.done = false; c.since = 0; if (c.el) c.el.pause(); }
+      for (const c of clips) { c.done = false; c.since = 0; c.fresh = false; if (c.el) c.el.pause(); }
       syncAudio(); show();
     };
     const fullscreen = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {});

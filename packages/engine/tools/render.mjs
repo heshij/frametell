@@ -35,6 +35,17 @@ if (WATERMARK) process.env.WATERMARK = '1';
 const FPS = +arg('fps', 60), W = +arg('workers', 12), name = arg('name', META.name || 'video') + (PORTRAIT ? (META.lang === 'en' ? '-portrait' : '-竖版') : '');
 const from = +arg('from', 0), to = +arg('to', L.duration);
 const F0 = Math.round(from * FPS), F1 = Math.round(to * FPS);
+// The film's first frame is its cover: a page settled, at the moment its thumbnail is cut (0.4 s before it ends). Which
+// page is the studio's cover.json ({ "page": "p03" }); the first page when none is set, or the page is gone. A chat app
+// or a file browser shows a video by its first frame, and a film opens on a blank stage; one frame of the cover is not
+// seen when the film plays. Only a film drawn from its start has one.
+const COVER = (() => {
+  if (from !== 0) return undefined;
+  let id;
+  try { id = JSON.parse(fs.readFileSync(path.join(EP, 'cover.json'), 'utf8')).page; } catch { /* the first page */ }
+  const p = L.pages.find((q) => q.id === id) ?? L.pages[0];
+  return p ? Math.round(Math.max(p.start, p.end - 0.4) * 100) / 100 : undefined;
+})();
 const chunkDir = path.join(OUT, PORTRAIT ? 'chunks-portrait' : 'chunks');
 fs.mkdirSync(chunkDir, { recursive: true });
 
@@ -157,7 +168,9 @@ if (!has('skip-video')) {
       const a = Math.round(bounds[k] * FPS), b = Math.round(bounds[k + 1] * FPS);
       if (a >= b) continue;
       const near = L.pages.filter((q) => q.start < b / FPS + MARGIN && q.end > a / FPS - MARGIN).map((q) => pageKey[q.id]);
-      segs.push({ a, b, out: path.join(chunkDir, `seg-${digest(shared, a, b, near)}.mp4`) });
+      // the segment that opens the film draws the cover as its first frame (and is cached under it)
+      const cover = a === 0 && COVER !== undefined ? COVER : undefined;
+      segs.push({ a, b, ...(cover !== undefined ? { cover } : {}), out: path.join(chunkDir, `seg-${digest(shared, a, b, near, ...(cover !== undefined ? [`cover-${cover}`] : []))}.mp4`) });
     }
   }
   if (has('plan')) {
