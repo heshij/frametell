@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Copy, Download, FolderOpen, Loader2 } from 'lucide-react';
+import { Check, Copy, Download, FolderOpen, Loader2, Presentation } from 'lucide-react';
 import { client, downloadUrl, hosted, type ProjectView } from '../lib/client';
 import { useNow } from '../lib/hooks';
 import { clock, film, isWorking, relPath, type RunView } from '../lib/run';
@@ -27,6 +27,58 @@ export function ExportControls({ run, project, size = '' }: { run: RunView; proj
       title={run.stale ? t('common.export.staleTitle') : t('common.export.title')}>
       <Download size={14} aria-hidden /> {run.stale ? t('common.export.exportLatest') : t('common.export.exportMp4')}
     </button>
+  );
+}
+
+/** the preview as a slide deck (the engine's ?deck) */
+const deckUrl = (project: ProjectView) => `${client.fileUrl(project, 'index.html')}?deck`;
+
+/**
+ * The film as a slide deck, a line a click, in a window of its own. On a hosted service the preview's address is signed
+ * and opens anywhere without signing in: it is also the link to share (here, on this machine, it would reach no one).
+ */
+export function DeckControls({ project, size = '' }: { project: ProjectView; size?: string }) {
+  const { t } = useT();
+  const [open, setOpen] = useState(false);
+  const [at, setAt] = useState<{ top: number; left: number; width: number }>();
+  const [copied, setCopied] = useState(false);
+  const root = useRef<HTMLSpanElement>(null);
+  const place = () => {
+    const el = root.current; if (!el) return;
+    const r = el.getBoundingClientRect(), width = Math.min(420, innerWidth - 16);
+    setAt({ top: r.bottom + 6, left: Math.max(8, Math.min(r.right - width, innerWidth - width - 8)), width });
+  };
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { const el = e.target as HTMLElement; if (!root.current?.contains(el) && !el.closest?.('[data-deck]')) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    const moved = () => place();
+    addEventListener('mousedown', away); addEventListener('keydown', esc); addEventListener('resize', moved); addEventListener('scroll', moved, true);
+    return () => { removeEventListener('mousedown', away); removeEventListener('keydown', esc); removeEventListener('resize', moved); removeEventListener('scroll', moved, true); };
+  }, [open]);
+  const present = () => window.open(deckUrl(project), '_blank', 'noopener');
+  if (!hosted) return <button type="button" className={`fs-btn fs-btn-ghost ${size}`} title={t('common.export.deckTitle')} onClick={present}><Presentation size={14} aria-hidden /> {t('common.export.deck')}</button>;
+
+  const link = deckUrl(project);
+  const copy = async () => { try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* the link is selectable */ } };
+  return (
+    <span ref={root} className="relative inline-flex">
+      <button type="button" className={`fs-btn fs-btn-ghost ${size}`} aria-expanded={open} title={t('common.export.deckTitle')} onClick={() => (open ? setOpen(false) : (place(), setOpen(true)))}><Presentation size={14} aria-hidden /> {t('common.export.deck')}</button>
+      {open && at && createPortal((
+        <span role="dialog" data-deck aria-label={t('common.export.deck')} style={{ top: at.top, left: at.left, width: at.width }} className="fixed z-50 flex flex-col gap-3 rounded-xl border border-line bg-surface p-3.5 shadow-[0_12px_32px_-8px_rgb(0_0_0/0.35),0_2px_6px_rgb(0_0_0/0.12)] animate-pop [transform-origin:top_right]">
+          <span className="block text-[12.5px] leading-relaxed text-ink-2">{t('common.export.deckIntro')}</span>
+          <button type="button" className="fs-btn fs-btn-secondary fs-btn-sm self-start" onClick={present}><Presentation size={13} aria-hidden /> {t('common.export.deckPreview')}</button>
+          <span className="block border-t border-line pt-3">
+            <span className="block text-[12.5px] font-medium text-ink">{t('common.export.deckLink')}</span>
+            <span className="mt-1 block text-[12px] leading-relaxed text-ink-3">{t('common.export.deckLinkHint')}</span>
+            <span className="mt-2 flex items-start gap-2">
+              <code className="min-w-0 flex-1 select-all break-all rounded-lg bg-paper-2 px-2.5 py-2 font-mono text-[11.5px] leading-relaxed text-ink">{link}</code>
+              <button type="button" className="fs-btn fs-btn-secondary fs-btn-sm shrink-0" onClick={() => void copy()}>{copied ? <Check size={13} className="text-jade" aria-hidden /> : <Copy size={13} aria-hidden />} {copied ? t('common.export.copied') : t('common.export.copy')}</button>
+            </span>
+          </span>
+        </span>
+      ), document.body)}
+    </span>
   );
 }
 

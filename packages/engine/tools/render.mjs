@@ -39,11 +39,19 @@ const F0 = Math.round(from * FPS), F1 = Math.round(to * FPS);
 // page is the studio's cover.json ({ "page": "p03" }); the first page when none is set, or the page is gone. A chat app
 // or a file browser shows a video by its first frame, and a film opens on a blank stage; one frame of the cover is not
 // seen when the film plays. Only a film drawn from its start has one.
+// cover.json { "image": "cover-<hash>.jpg" }: a picture the user gave is that frame instead, filling the stage (a regular
+// file in the project only: never a link, which could carry another account's file into the film)
+let cover;
+try { cover = JSON.parse(fs.readFileSync(path.join(EP, 'cover.json'), 'utf8')); } catch { /* the first page */ }
+const COVER_IMAGE = (() => {
+  if (from !== 0 || typeof cover?.image !== 'string' || !/^cover-[0-9a-f]{12}\.(jpg|png|webp)$/.test(cover.image)) return undefined;
+  const f = path.join(EP, cover.image);
+  try { if (!fs.lstatSync(f).isFile()) return undefined; } catch { return undefined; }
+  return { file: f, sha: createHash('sha1').update(fs.readFileSync(f)).digest('hex').slice(0, 16) };
+})();
 const COVER = (() => {
-  if (from !== 0) return undefined;
-  let id;
-  try { id = JSON.parse(fs.readFileSync(path.join(EP, 'cover.json'), 'utf8')).page; } catch { /* the first page */ }
-  const p = L.pages.find((q) => q.id === id) ?? L.pages[0];
+  if (from !== 0 || COVER_IMAGE) return undefined;
+  const p = L.pages.find((q) => q.id === cover?.page) ?? L.pages[0];
   return p ? Math.round(Math.max(p.start, p.end - 0.4) * 100) / 100 : undefined;
 })();
 const chunkDir = path.join(OUT, PORTRAIT ? 'chunks-portrait' : 'chunks');
@@ -169,8 +177,9 @@ if (!has('skip-video')) {
       if (a >= b) continue;
       const near = L.pages.filter((q) => q.start < b / FPS + MARGIN && q.end > a / FPS - MARGIN).map((q) => pageKey[q.id]);
       // the segment that opens the film draws the cover as its first frame (and is cached under it)
-      const cover = a === 0 && COVER !== undefined ? COVER : undefined;
-      segs.push({ a, b, ...(cover !== undefined ? { cover } : {}), out: path.join(chunkDir, `seg-${digest(shared, a, b, near, ...(cover !== undefined ? [`cover-${cover}`] : []))}.mp4`) });
+      const cover = a === 0 && COVER !== undefined ? COVER : undefined, image = a === 0 ? COVER_IMAGE : undefined;
+      segs.push({ a, b, ...(cover !== undefined ? { cover } : {}), ...(image ? { coverImage: image.file } : {}),
+        out: path.join(chunkDir, `seg-${digest(shared, a, b, near, ...(cover !== undefined ? [`cover-${cover}`] : []), ...(image ? [`cover-image-${image.sha}`] : []))}.mp4`) });
     }
   }
   if (has('plan')) {

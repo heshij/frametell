@@ -28,6 +28,9 @@ export interface BrandBrief {
   /** the director may give the logo a few planned moments (default: yes); false: no logo on screen at all, the brand
    *  only in its colours and tone */
   showLogo?: boolean;
+  /** the corner where the engine keeps a small logo on every page (top-right, bottom-right, bottom-left; never top-left,
+   *  where each page's title sits); absent: no corner logo */
+  corner?: BrandCorner;
   /** the palette name that carries the brand's main colour in the film's style (the host maps the colours) */
   emphasis?: string;
   /** the film's palette as the host set it from the brand's colours (name → #RRGGBB), so its colours are described as
@@ -35,6 +38,9 @@ export interface BrandBrief {
   palette?: Record<string, string>;
   assets: BrandAsset[];
 }
+
+export type BrandCorner = 'tr' | 'br' | 'bl';
+const CORNERS: Record<BrandCorner, string> = { tr: 'top-right', br: 'bottom-right', bl: 'bottom-left' };
 
 /** where a film keeps its brand's files */
 export const BRAND_DIR = 'assets/brand';
@@ -74,6 +80,7 @@ export function cleanBrand(x: unknown): BrandBrief | undefined {
   if (tone) brief.tone = tone;
   if (tagline) brief.tagline = tagline;
   if (o.showLogo === false) brief.showLogo = false;
+  if (typeof o.corner === 'string' && o.corner in CORNERS) brief.corner = o.corner as BrandCorner;
   if (typeof o.emphasis === 'string' && NAME.test(o.emphasis)) brief.emphasis = o.emphasis;
   if (o.palette && typeof o.palette === 'object' && !Array.isArray(o.palette)) {
     const palette = Object.fromEntries(Object.entries(o.palette as Record<string, unknown>)
@@ -107,6 +114,19 @@ export function signsOff(brand: BrandBrief | undefined, pages: Parameters<typeof
   return !!last && brandFilesOn(brand, pages, last.id).some((a) => LOGOS.includes(a.kind));
 }
 
+/** The engine's corner mark (META.mark): the brand's wordless mark, else its logo, in the corner the brand chose, on
+ *  every page; its dark-ground logo with it when it has one. undefined when the brand shows no logo or chose no corner. */
+export function cornerMark(brand: BrandBrief | undefined, signOff = false) {
+  if (!brand?.corner || brand.showLogo === false) return undefined;
+  const a = brand.assets.find((x) => x.kind === 'mark') ?? brand.assets.find((x) => x.kind === 'logo') ?? brand.assets.find((x) => x.kind === 'logo-dark');
+  if (!a) return undefined;
+  const dark = a.kind === 'logo' ? brand.assets.find((x) => x.kind === 'logo-dark') : undefined;
+  return { src: pathOf(a), ...(dark ? { dark: pathOf(dark) } : {}), corner: brand.corner, w: a.w || 1, h: a.h || 1, ...(signOff ? { signOff: true } : {}) };
+}
+
+/** where the corner mark sits, for the agents who must keep it clear: the corner and the box it takes (1920×1080) */
+const cornerRule = (c: BrandCorner) => `- The film already carries the brand's logo, small, in the **${CORNERS[c]} corner of every page**: the engine draws it there by itself, above the page and still while the camera moves. Never draw a logo or the brand's name in that corner, and keep that corner clear: nothing in the ${c === 'tr' ? 'top' : 'bottom'} ${c === 'bl' ? 'left' : 'right'} ${'240×150'} px of the frame.`;
+
 /** The brand, for the director (storyboard, script, changes): after the style card, so it reads as who the film
  *  speaks for, not as a new style. '' without a brand, so the prompt stays as it was. */
 export function brandSection(brand?: BrandBrief) {
@@ -114,6 +134,7 @@ export function brandSection(brand?: BrandBrief) {
   const logo = brand.assets.some((a) => LOGOS.includes(a.kind));
   const shown = brand.showLogo !== false;
   const files = brand.assets.filter((a) => shown || !LOGOS.includes(a.kind));
+  const corner = cornerMark(brand) ? brand.corner : undefined;
   return `---
 # This film's brand
 
@@ -124,7 +145,7 @@ The film is made for a brand and speaks for it. Its colours and typeface, when i
 Its files, in the project (open a picture with read to see it):
 ${files.length ? files.map(line).join('\n') : '(none)'}
 
-${logo && shown ? `## Brand moments\n\n${BRAND_MOMENT_RULES}\n\n## Everything else\n\n` : ''}${!shown ? '- No logo on screen anywhere in this film: the brand shows in its colours and its tone only.\n' : ''}- Use the other files only where the content calls for them (the product's screenshot where the film shows the product); never put one in because it is there. A beat that places one names its path in its object (\`${BRAND_DIR}/…\`), so the page agent places that very file.
+${logo && shown ? `## Brand moments\n\n${BRAND_MOMENT_RULES}\n\n## Everything else\n\n` : ''}${!shown ? '- No logo on screen anywhere in this film: the brand shows in its colours and its tone only.\n' : ''}${corner ? `${cornerRule(corner)} It is the brand's moment on every page: plan no other corner mark, seal or masthead. The closing sign-off still happens as above (the corner logo fades out before it).\n` : ''}- Use the other files only where the content calls for them (the product's screenshot where the film shows the product); never put one in because it is there. A beat that places one names its path in its object (\`${BRAND_DIR}/…\`), so the page agent places that very file.
 ${brand.palette ? `- In this film the palette's colours are: ${Object.entries(brand.palette).map(([k, v]) => `${k} ${v}`).join(', ')}. Describe colours by what they are now, not by the style card's names.\n` : ''}${brand.emphasis ? `${emphasisRule(brand.emphasis)}\n` : ''}- Write the narration and the words on screen in the brand's tone. The rules on facts still hold: the tone never adds a claim, a number or a promise the material doesn't support.`;
 }
 
@@ -153,8 +174,8 @@ const emphasisRule = (name: string) => `- The brand's main colour is the palette
 
 /** For the page agent: the brand's colour for emphasis, and the brand's files this page places, with the call that
  *  places each, and how a logo is treated. '' when there is neither, so the prompt stays as it was. */
-export function brandPageNote(files: BrandAsset[], emphasis?: string) {
-  if (!files.length) return emphasis ? `\n\n## The brand\n${emphasisRule(emphasis)}` : '';
+export function brandPageNote(files: BrandAsset[], emphasis?: string, corner?: BrandCorner) {
+  if (!files.length) return emphasis || corner ? `\n\n## The brand\n${[corner && cornerRule(corner), emphasis && emphasisRule(emphasis)].filter(Boolean).join('\n')}` : '';
   const logos = files.some((a) => LOGOS.includes(a.kind));
   const dark = files.find((a) => a.kind === 'logo-dark');
   return `
@@ -171,7 +192,7 @@ ${logos ? `
 - A logo or an icon is never framed, bordered or shadowed: keep \`border: false, shadow: false, r: 0\` as in the calls above, so it stands on the page as it is.
 - ${dark ? `On a dark ground use \`${pathOf(dark)}\`; on a light ground the logo.` : 'On a dark ground, set the logo on a light card of its own rather than on the dark.'}
 - A logo with an opaque background sits on a ground that matches it, or on a card, never cut out.` : ''}
-- Place only these files, where and when the storyboard puts them.${emphasis ? `\n${emphasisRule(emphasis)}` : ''}`;
+- Place only these files, where and when the storyboard puts them.${corner ? `\n${cornerRule(corner)}` : ''}${emphasis ? `\n${emphasisRule(emphasis)}` : ''}`;
 }
 
 /** For the page's reviewer: the logo checked where the storyboard puts it, and looked for where it doesn't. '' for a
@@ -179,6 +200,9 @@ ${logos ? `
 export function brandReviewNote(brand: BrandBrief | undefined, files: BrandAsset[]) {
   if (!brand?.assets.some((a) => LOGOS.includes(a.kind))) return '';
   const logos = files.filter((a) => LOGOS.includes(a.kind));
-  if (!logos.length) return `\nThe storyboard puts no brand logo on this page: fail it if one appears.\n`;
-  return `\nThe storyboard puts the brand's logo on this page (${logos.map((a) => a.file).join(', ')}). Fail the page if the logo is stretched or squashed, cropped, recoloured, framed, covered by anything, overlapping or crowding any other element, in the middle of the content, more than one in a frame, or too small or faint to read. In a sign-off (the logo with its tagline), also fail it if the logo is smaller or narrower than its tagline, touches or sits on a line, horizon or edge, reads as a watermark rather than the moment's subject, or arrives before the narration's last line has ended.\n`;
+  const c = cornerMark(brand) ? brand.corner! : undefined;
+  // the engine's corner mark is on every page by design: the page is only failed for crowding it
+  const corner = c ? `\nThe small logo in the ${CORNERS[c]} corner is the film's own corner mark, drawn by the engine on every page: it is right there. Fail the page only if something of the page itself sits in that corner, touches or crowds that logo, or if the page draws a second logo or the brand's name in that corner.\n` : '';
+  if (!logos.length) return `${corner}\nThe storyboard puts no ${c ? 'other ' : ''}brand logo on this page: fail it if one appears${c ? ' anywhere but that corner' : ''}.\n`;
+  return `${corner}\nThe storyboard puts the brand's logo on this page (${logos.map((a) => a.file).join(', ')}). Fail the page if the logo is stretched or squashed, cropped, recoloured, framed, covered by anything, overlapping or crowding any other element, in the middle of the content, more than one in a frame, or too small or faint to read. In a sign-off (the logo with its tagline), also fail it if the logo is smaller or narrower than its tagline, touches or sits on a line, horizon or edge, reads as a watermark rather than the moment's subject, or arrives before the narration's last line has ended.\n`;
 }

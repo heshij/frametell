@@ -145,7 +145,8 @@ async function cut(child: ChildCmd, dir: string, wav: string, sp: { s: number; e
   const removed: [number, number][] = [];
   // the few ms before a leading silence (or after a trailing one) count as part of it, as when head/tail were found
   if (head && segs[0].a > head[0]) removed.push([head[0], segs[0].a]);
-  if (segs[n - 1].b < D) removed.push([segs[n - 1].b, tail ? Math.max(segs[n - 1].b, tail[1]) : D]);
+  // (a tail silence can end up to 20 ms before D, and a cut past its end drops only those ms: nothing to report)
+  if (tail && segs[n - 1].b < tail[1]) removed.push([segs[n - 1].b, tail[1]]);
   for (let i = 0; i < n - 1; i++) {
     const lo = sp[i].e - 0.15, hi = sp[i + 1].s + 0.15;
     const cand = sil.filter(([a, b]) => b > lo && a < hi && a > 0.02 && b < D - 0.02).sort((x, y) => y[1] - y[0] - (x[1] - x[0]))[0];
@@ -162,7 +163,7 @@ async function cut(child: ChildCmd, dir: string, wav: string, sp: { s: number; e
   segs.forEach((g, i) => { g.o = Math.max(0, Math.min(sp[i].s - g.a, g.b - g.a - 0.1)); });
   // durations read from ffmpeg are rounded to 1/100 s, so a silence that runs to the end can look 5 ms short of it
   const inSil = ([a, b]: [number, number]) => sil.some(([x, y]) => a >= x - 0.01 && b <= y + 0.01);
-  const bad = removed.filter((x) => !inSil(x));
+  const bad = removed.filter((x) => x[1] - x[0] > 0.005 && !inSil(x));
   return { segs, bad };
 }
 

@@ -177,6 +177,22 @@ test('a new film keeps its style notes and look, the look checked', async () => 
   } finally { fs.rmSync(dataDir, { recursive: true, force: true }); }
 });
 
+test('a new film\'s placeholder opening speaks the film\'s language until the director writes the script', () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'frametell-lang-'));
+  try {
+    const studio = new Studio({ dataDir, config: memoryConfig({ defaults: { model: 'anthropic/x' } as Config['defaults'] }), linkProjects: false });
+    const script = (lang: 'zh' | 'en') => {
+      const p = studio.createProject({ topic: 'tides', title: 'Tides', lang }, [], { start: false });
+      const g: { SCRIPT?: { PAGES: { section: string; cues: (string | { t: string })[] }[] } } = {};
+      new Function('globalThis', fs.readFileSync(path.join(studio.projectsDir, p.id, 'script.js'), 'utf8'))(g);
+      const [page] = g.SCRIPT!.PAGES;
+      return [page.section, ...page.cues.map((c) => typeof c === 'string' ? c : c.t)];
+    };
+    assert.deepEqual(script('en'), ['Opening', 'Hi, in this one we talk about:', 'Tides.', 'Let’s start with a question.']);
+    assert.deepEqual(script('zh'), ['开场', '大家好，这一篇我们来聊：', 'Tides。', '先从一个问题说起。']);
+  } finally { fs.rmSync(dataDir, { recursive: true, force: true }); }
+});
+
 test('a new film keeps its brand, checked, and its files in assets/brand/: only those the brief names, under plain names', () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'frametell-brand-'));
   try {
@@ -509,6 +525,44 @@ test('a film\'s cover is chosen in cover.json: an mp4 made before is out of date
     fs.writeFileSync(outside, JSON.stringify({ page: 'p09' }));
     fs.symlinkSync(outside, path.join(dir, 'cover.json'));
     assert.equal(studio.project(id).cover, undefined);
+    off();
+  } finally { fs.rmSync(dataDir, { recursive: true, force: true }); }
+});
+
+test('a picture of the user\'s own as the cover: kept by its hash, checked by its bytes, gone when a page is chosen', () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'frametell-cover-img-'));
+  try {
+    const id = '2026-10-19-coverimg0001', dir = path.join(dataDir, 'projects', id), now = new Date().toISOString();
+    fs.mkdirSync(path.join(dir, '.studio'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.studio', 'project.json'), JSON.stringify({ id, title: id, style: 'whiteboard', durationSec: 60, model: 'nowhere/none', runtime: 'pi', subtitles: true, materials: [], createdAt: now, updatedAt: now }));
+    fs.writeFileSync(path.join(dir, '.studio', 'state.json'), JSON.stringify({ stage: 'done', video: path.join(dir, 'out', 'v-有字幕.mp4'), exported: true }));
+    const studio = new Studio({ dataDir, config: memoryConfig() });
+    const seen: { type: string; page?: string | null; image?: string }[] = [];
+    const off = studio.subscribe(id, 0, (e) => seen.push(e as never));
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('one')]);
+    const jpg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('two')]);
+    assert.equal(studio.setCoverImage(id, Buffer.from('<svg/>')), undefined);
+    const a = studio.setCoverImage(id, png)!;
+    assert.match(a, /^cover-[0-9a-f]{12}\.png$/);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'cover.json'), 'utf8')), { image: a });
+    assert.equal(studio.project(id).coverImage, a);
+    assert.equal(studio.project(id).stale, true);
+    // another picture takes the old one's place
+    const b = studio.setCoverImage(id, jpg)!;
+    assert.match(b, /\.jpg$/);
+    assert.ok(!fs.existsSync(path.join(dir, a)) && fs.existsSync(path.join(dir, b)));
+    // a page chosen: the picture goes
+    assert.equal(studio.setCover(id, 'p02'), true);
+    assert.ok(!fs.existsSync(path.join(dir, b)));
+    assert.equal(studio.project(id).coverImage, undefined);
+    assert.equal(studio.project(id).cover, 'p02');
+    assert.deepEqual(seen.filter((e) => e.type === 'cover').map((e) => [e.page, e.image]), [[null, a], [null, b], ['p02', undefined]]);
+    // a cover.json naming a picture that is a link out is not taken
+    const outside = path.join(dataDir, 'secret.png');
+    fs.writeFileSync(outside, png);
+    fs.writeFileSync(path.join(dir, 'cover.json'), JSON.stringify({ image: 'cover-000000000000.png' }));
+    fs.symlinkSync(outside, path.join(dir, 'cover-000000000000.png'));
+    assert.equal(studio.project(id).coverImage, undefined);
     off();
   } finally { fs.rmSync(dataDir, { recursive: true, force: true }); }
 });

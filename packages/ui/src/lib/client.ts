@@ -47,6 +47,8 @@ export interface StudioClient {
   /** the page the exported film opens on (its first frame); null: the first page. False while the film is being made.
    *  Absent where a host can't set it */
   setCover?(id: string, page: string | null): Promise<boolean>;
+  /** a picture of the user's own as that first frame (JPEG, PNG or WebP): its file in the project; throws when refused */
+  setCoverImage?(id: string, file: File): Promise<string>;
   /** replay after `since`, then live; returns unsubscribe */
   subscribe(id: string, since: number, onEvent: (e: LoggedEvent) => void, onState?: (s: 'open' | 'reconnecting') => void): () => void;
   /** where a narrator's sample can be played */
@@ -123,6 +125,7 @@ export const httpClient: StudioClient = {
   timeline: (id) => call<Timeline | null>('GET', `/api/projects/${id}/timeline`),
   export: async (id) => (await call<{ ok: boolean }>('POST', `/api/projects/${id}/export`)).ok,
   setCover: async (id, page) => (await call<{ ok: boolean }>('PUT', `/api/projects/${id}/cover`, { page })).ok,
+  setCoverImage: async (id, file) => { const f = new FormData(); f.append('file', file); return (await call<{ image: string }>('PUT', `/api/projects/${id}/cover/image`, f)).image; },
   frames: async (id, times) => (await call<{ paths: string[] }>('GET', `/api/projects/${id}/frames?t=${times.map((t) => t.toFixed(1)).join(',')}`)).paths,
   say: async (id, text, refs) => (await call<{ ok: boolean }>('POST', `/api/projects/${id}/say`, { text, refs })).ok,
   attach: async (id, file) => { const f = new FormData(); f.append('file', file); return call<UserRef>('POST', `/api/projects/${id}/attach`, f); },

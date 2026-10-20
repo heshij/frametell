@@ -68,8 +68,9 @@ export interface ProjectMeta {
   group?: string;
 }
 /** `stale`: the exported mp4 is older than the film (a revision changed it since); the preview shows the film as it is */
-/** `cover`: the page the exported film opens on (its first frame), when one other than the first was chosen */
-export interface ProjectSummary extends ProjectMeta { status: RunStatus; stage?: string; video?: string; stale?: boolean; cover?: string }
+/** `cover`: the page the exported film opens on (its first frame), when one other than the first was chosen;
+ *  `coverImage`: a picture the user gave for that frame instead (its file in the project) */
+export interface ProjectSummary extends ProjectMeta { status: RunStatus; stage?: string; video?: string; stale?: boolean; cover?: string; coverImage?: string }
 
 export interface NewProjectInput {
   title?: string;

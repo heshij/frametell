@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BRAND_MOMENT_RULES, brandFilesOn, brandSection, cleanBrand, signsOff, type BrandBrief } from './brand.js';
+import { BRAND_MOMENT_RULES, brandFilesOn, brandSection, cleanBrand, cornerMark, signsOff, type BrandBrief } from './brand.js';
 import { pagePrompt, pageSystem, plannerSystem, reviewerPrompt, reviewerSystem } from './prompts.js';
 import type { PageTiming, Storyboard } from './project.js';
 
@@ -148,4 +148,25 @@ test('the film\'s palette as the host set it from the brand is spelled out, so c
   assert.equal(cleanBrand({ ...brand, palette: ['#000000'] })!.palette, undefined);
   assert.ok(brandSection(b).includes("- In this film the palette's colours are: red #0B6E99, green #2A9D8F, ink #1A1714. Describe colours by what they are now, not by the style card's names.\n"));
   assert.ok(!brandSection(brand).includes("palette's colours are"));
+});
+
+test('a corner the brand chose puts its logo on every page through the engine, and the agents keep that corner clear', () => {
+  assert.equal(cleanBrand({ ...brand, corner: 'tr' })!.corner, 'tr');
+  for (const bad of ['tl', 'none', '', 3]) assert.equal(cleanBrand({ ...brand, corner: bad })!.corner, undefined);
+  const b = { ...brand, corner: 'br' as const };
+  assert.deepEqual(cornerMark(b), { src: 'assets/brand/a1.svg', dark: 'assets/brand/a2.svg', corner: 'br', w: 600, h: 200 });
+  assert.equal(cornerMark(b, true)!.signOff, true);
+  // a wordless mark is preferred in a corner
+  assert.equal(cornerMark({ ...b, assets: [...brand.assets, { file: 'm.png', kind: 'mark', name: 'Mark', note: '', w: 64, h: 64, alpha: true }] })!.src, 'assets/brand/m.png');
+  assert.equal(cornerMark(brand), undefined, 'no corner chosen');
+  assert.equal(cornerMark({ ...b, showLogo: false }), undefined, 'no logo at all');
+  assert.equal(cornerMark({ ...b, assets: brand.assets.filter((a) => a.kind === 'image') }), undefined, 'a picture is not a logo');
+  assert.ok(brandSection(b).includes('bottom-right corner of every page') && brandSection(b).includes('plan no other corner mark'));
+  assert.ok(!brandSection(brand).includes('corner of every page'));
+  // every page is told, with or without the brand's files on it; the reviewer accepts the mark but not a crowded corner
+  assert.ok(pagePrompt(sb, 'p03', t, 'en', 'en', false, b).includes('bottom-right corner of every page'));
+  assert.ok(pagePrompt(sb, 'p04', t, 'en', 'en', false, b).includes('bottom-right corner of every page'));
+  const review = reviewerPrompt(sb, 'p03', t, 1, [], [], undefined, b);
+  assert.ok(review.includes("film's own corner mark") && review.includes('anywhere but that corner'));
+  assert.equal(pagePrompt(sb, 'p03', t, 'en', 'en', false, brand), pagePrompt(sb, 'p03', t, 'en', 'en', false), 'no corner, no change');
 });

@@ -39,12 +39,20 @@ export function linkProject(dir) {
   link(engineModulesDir(), path.join(dir, 'engine_modules'));
 }
 
-/** Scaffold a new project from the template. */
-export function createProject(dir, { title = '未命名视频', style = 'study' } = {}) {
+/** The template's placeholder opening, per film language, until the director writes the script. */
+const OPENING = {
+  zh: { title: '未命名视频', __SECTION__: '开场', __HELLO__: '大家好，这一篇我们来聊：', __TOPIC__: '__TITLE__。', __ASK__: '先从一个问题说起。' },
+  en: { title: 'Untitled video', __SECTION__: 'Opening', __HELLO__: 'Hi, in this one we talk about:', __TOPIC__: '__TITLE__.', __ASK__: 'Let’s start with a question.' },
+};
+
+/** Scaffold a new project from the template; `lang` is the film's language (zh or en, default zh). */
+export function createProject(dir, { title, style = 'study', lang = 'zh' } = {}) {
+  const { title: untitled, ...words } = OPENING[lang] ?? OPENING.zh;
   fs.mkdirSync(path.join(dir, 'pages'), { recursive: true });
   for (const f of ['index.html', 'script.js', 'pages/p01.js']) {
-    const src = fs.readFileSync(path.join(ENGINE_DIR, 'template', f), 'utf8');
-    fs.writeFileSync(path.join(dir, f), src.replaceAll('__TITLE__', title).replace("  const META = {", `  const META = {\n    style: '${style}',`));
+    let src = fs.readFileSync(path.join(ENGINE_DIR, 'template', f), 'utf8');
+    for (const [k, v] of Object.entries(words)) src = src.replaceAll(k, v);
+    fs.writeFileSync(path.join(dir, f), src.replaceAll('__TITLE__', title || untitled).replace("  const META = {", `  const META = {\n    style: '${style}',`));
   }
   fs.writeFileSync(path.join(dir, '.gitignore'), 'engine\nengine_modules\nout/\n.studio/\n');
   linkProject(dir);

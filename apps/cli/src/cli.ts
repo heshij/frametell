@@ -48,7 +48,7 @@ async function run(argv: string[]) {
   const title = o.title || path.basename(pos[0]).replace(/\.[^.]+$/, '');
   const dir = path.resolve(o.out || path.join(os.homedir(), '.frametell', 'projects', `${new Date().toISOString().slice(0, 10)}-${title}-${Date.now().toString(36)}`));
   if (!fs.existsSync(path.join(dir, 'script.js'))) {
-    createProject(dir, { title, style });
+    createProject(dir, { title, style, lang });
     fs.mkdirSync(path.join(dir, 'materials'), { recursive: true });
     for (const f of pos) fs.copyFileSync(f, path.join(dir, 'materials', path.basename(f)));
   }

@@ -1,4 +1,5 @@
-/* Boot. ?render → fixed-size frame capture (1920×1080, or 1080×1920 with ?portrait). ?subs → burn subtitles (preview). ?t=12.3 → still. ?only=p01,p02 → build a subset. */
+/* Boot. ?render → fixed-size frame capture (1920×1080, or 1080×1920 with ?portrait). ?subs → burn subtitles (preview). ?t=12.3 → still. ?only=p01,p02 → build a subset.
+ * ?deck (or window.DECK_MODE) → the film as a slide deck, a line a click (deck.js). */
 (function () {
   const q = new URLSearchParams(location.search);
   const frame = document.getElementById('frame');
@@ -15,10 +16,13 @@
 
   const only = q.get('only') ? q.get('only').split(',') : null;
   // preview: scale the frame into the window and centre it (a grid would pin an oversized frame to the top left, so place it directly)
+  // (deck.js's presenter window draws it in a box of its own: window.DECK_BOX)
   const frameScale = () => {
-    const k = Math.min(innerWidth / STAGE.w, innerHeight / STAGE.h);
-    Object.assign(frame.style, { position: 'absolute', left: `${(innerWidth - STAGE.w) / 2}px`, top: `${(innerHeight - STAGE.h) / 2}px`, transform: `scale(${k})` });
+    const b = window.DECK_BOX ? DECK_BOX() : { x: 0, y: 0, w: innerWidth, h: innerHeight };
+    const k = Math.min(b.w / STAGE.w, b.h / STAGE.h);
+    Object.assign(frame.style, { position: 'absolute', left: `${b.x + (b.w - STAGE.w) / 2}px`, top: `${b.y + (b.h - STAGE.h) / 2}px`, transform: `scale(${k})` });
   };
+  const deck = q.has('deck') || window.DECK_MODE === true;
 
   if (!q.has('render')) { addEventListener('resize', frameScale); frameScale(); }
 
@@ -33,7 +37,7 @@
       document.fonts.load('700 30px Caveat', 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/'),
     ]).concat((window.EXTRA_FONTS || []).map((f) => document.fonts.load(f, all + '0123456789%.,+-×÷=¥?!？！'))));   // extras can register more font faces
     await document.fonts.ready;
-    ENGINE.init({ subs: q.has('subs') || (!q.has('render') && !q.has('t') && !q.has('nosubs')), only });
+    ENGINE.init({ subs: q.has('subs') || (!deck && !q.has('render') && !q.has('t') && !q.has('nosubs')), only });
     ENGINE.renderAt(0);
     return ENGINE.layout.duration;
   })();
@@ -41,12 +45,13 @@
   const t0 = q.has('t') ? parseFloat(q.get('t')) : null;
   if (t0 != null) { window.__ready.then(() => ENGINE.renderAt(t0)); return; }
   if (q.has('render')) return;
-  // live preview (index.html opened directly): the player is player.js; ?from=seconds starts there; subtitles on by default (?nosubs turns them off)
+  // live preview (index.html opened directly): the player is player.js (deck.js for ?deck); ?from=seconds starts there; subtitles on by default (?nosubs turns them off)
   frame.style.visibility = 'hidden';   // the first build pass shows every element: stay hidden until ready, so nothing flashes
   window.__ready.then(() => {
     frameScale();
     frame.style.visibility = '';
-    PLAYER({ from: parseFloat(q.get('from') || '0'), render: (t) => ENGINE.renderAt(t) });
+    if (deck) DECK({ render: (t) => ENGINE.renderAt(t) });
+    else PLAYER({ from: parseFloat(q.get('from') || '0'), render: (t) => ENGINE.renderAt(t) });
   }).catch((e) => {
     // a film that did not build stays dark: embedded in the Studio panel, say so, and the panel loads it again
     console.error(e);

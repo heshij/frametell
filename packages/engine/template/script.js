@@ -22,10 +22,10 @@
   };
   const PAGES = [
     // ───────────────────────── Opening
-    { id: 'p01', section: '开场', title: '__TITLE__', cues: [
-      '大家好，这一篇我们来聊：',
-      '__TITLE__。',
-      { t: '先从一个问题说起。', hold: 0.6 },
+    { id: 'p01', section: '__SECTION__', title: '__TITLE__', cues: [   // placeholder lines in the film's language (tools/project.mjs)
+      '__HELLO__',
+      '__TOPIC__',
+      { t: '__ASK__', hold: 0.6 },
     ] },
   ];
   root.SCRIPT = { META, PAGES };

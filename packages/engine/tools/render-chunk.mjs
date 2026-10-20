@@ -1,6 +1,7 @@
 // Renders frames [f0, f1) at FPS to an mp4 chunk. Usage (from a project dir): node engine/tools/render-chunk.mjs <f0> <f1> <fps> <out.mp4>
 //   or: render-chunk.mjs --jobs <list.json> <fps> — several chunks [{ a, b, out, cover? }] in one browser, one after
-//   another; `cover`: the time drawn as the chunk's first frame instead of its own (the film's cover, render.mjs)
+//   another; `cover`: the time drawn as the chunk's first frame instead of its own (the film's cover, render.mjs);
+//   `coverImage`: a picture (a file) shown over the whole stage as that frame instead
 // HW=1 (render.mjs --hw): encode on the machine's media engine (the Mac's, or an NVIDIA card's) so every CPU core is left
 // for the browsers. JPEG_QUALITY (render.mjs --jpeg-quality): how frames come out of Chrome; 92 by default.
 // A browser that stops answering exits with STALLED (3) instead of waiting for ever; render.mjs draws that share again.
@@ -43,7 +44,17 @@ const grab = async () => Buffer.from((await cdp.send('Page.captureScreenshot', {
 // veryfast: x264 at 'medium' took the CPU the browsers need to draw frames; at CRF 16 the difference does not show
 const enc = process.env.HW === '1' ? [...HW_ENCODE, ...(process.platform === 'darwin' ? ['-realtime', '0'] : [])] : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16'];
 let code = 0;
-for (const { a: f0, b: f1, out, cover } of jobs) {
+/** a picture over the whole stage (under the watermark), as a data URL: the page may be on another origin than the file */
+const showCover = (file) => page.evaluate(async (src) => {
+  const img = document.createElement('img');
+  img.id = '__cover';
+  img.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;object-fit:cover;z-index:2147483646;background:#000';
+  img.src = src;
+  document.body.appendChild(img);
+  await img.decode();
+}, `data:image/${path.extname(file).slice(1).replace('jpg', 'jpeg')};base64,${fs.readFileSync(file).toString('base64')}`);
+const hideCover = () => page.evaluate(() => document.getElementById('__cover')?.remove());
+for (const { a: f0, b: f1, out, cover, coverImage } of jobs) {
   const ff = spawn(FFMPEG, ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(fps), '-c:v', 'mjpeg', '-i', '-',
     ...enc, '-pix_fmt', 'yuv420p', '-r', String(fps), '-f', 'mp4', out], { stdio: ['pipe', 'inherit', 'inherit'] });
   // an encoder that quits takes no more frames: stop drawing for it, and never wait on a pipe it will not drain
@@ -53,6 +64,7 @@ for (const { a: f0, b: f1, out, cover } of jobs) {
   for (let f = f0; f < f1 && ff.exitCode === null; f++) {
     // window.__frameReady (optional, set by an episode's extras): wait until everything this frame needs (e.g. images) is ready
     const buf = await within((async () => {
+      if (f === f0 && coverImage) { await showCover(coverImage); const b = await grab(); await hideCover(); return b; }
       await page.evaluate(async (t) => { ENGINE.renderAt(t); if (window.__frameReady) await window.__frameReady(t); }, f === f0 && cover !== undefined ? cover : f / fps);
       return grab();
     })(), FRAME_MS, `frame ${f} (${(f / fps).toFixed(2)}s) was not drawn in ${FRAME_MS / 1000}s: the browser stopped answering`).catch(stalled);

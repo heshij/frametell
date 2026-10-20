@@ -7,7 +7,7 @@ export { seccompFilter, writeSeccompFilter, BLOCKED as SECCOMP_BLOCKED } from '.
 export { gitSync, gitAsync, GIT_SAFE } from './git.js';
 export { cleanLook, type Look } from './look.js';
 export { STYLES, type Brief } from './prompts.js';
-export { cleanBrand, brandSection, BRAND_DIR, BRAND_MOMENT_RULES, type BrandBrief, type BrandAsset, type BrandAssetKind } from './brand.js';
+export { cleanBrand, brandSection, cornerMark, BRAND_DIR, BRAND_MOMENT_RULES, type BrandBrief, type BrandCorner, type BrandAsset, type BrandAssetKind } from './brand.js';
 export type { StudioEvent, Stage, PageStatus, PageIssue, UserRef } from './events.js';
 export type { AgentRuntime, AgentSession, RuntimeEvent, TokenUsage, TurnResult } from './runtime/types.js';
 export { piRuntime } from './runtime/pi.js';

@@ -85,6 +85,12 @@ export function createServer(studio = new Studio(), opts: { token?: string } = {
     const { page } = (await c.req.json().catch(() => ({}))) as { page?: unknown };
     return c.json({ ok: studio.setCover(c.req.param('id'), typeof page === 'string' ? page : null) });
   });
+  app.put('/api/projects/:id/cover/image', async (c) => {
+    const f = (await c.req.formData()).get('file');
+    if (!(f instanceof File)) return c.json({ error: 'No file received' }, 400);
+    const image = studio.setCoverImage(c.req.param('id'), new Uint8Array(await f.arrayBuffer()));
+    return image ? c.json({ image }) : c.json({ error: 'cover must be a JPEG, PNG or WebP of at most 10 MB, and not while the film is being made' }, 400);
+  });
   app.post('/api/projects/:id/stop', (c) => { studio.stop(c.req.param('id')); return c.json({ ok: true }); });
   app.patch('/api/projects/:id', async (c) => { studio.moveProject(c.req.param('id'), String((await c.req.json()).group ?? '')); return c.json({ ok: true }); });
   app.delete('/api/projects/:id', (c) => { studio.deleteProject(c.req.param('id')); return c.json({ ok: true }); });

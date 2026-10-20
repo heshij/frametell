@@ -28,7 +28,7 @@ const en: typeof zh = {
   },
   requestFailed: 'Request failed ({status})',
   styles: {
-    'warm-story': 'Warm storybook', study: 'Quiet study', whiteboard: 'Whiteboard', chalkboard: 'Chalkboard', 'tech-dark': 'Tech dark',
+    'warm-story': 'Warm illustration', study: 'Quiet study', whiteboard: 'Whiteboard', chalkboard: 'Chalkboard', 'tech-dark': 'Tech dark',
   },
   styleSummaries: {
     'warm-story': 'Warm flat illustration with one metaphor carried through the whole film. Good for investing, everyday life and psychology.',
@@ -51,6 +51,12 @@ const en: typeof zh = {
     title: 'Export the film as mp4, with and without subtitles',
     exportLatest: 'Export latest',
     exportMp4: 'Export mp4',
+    deck: 'Present',
+    deckTitle: 'Present the film as a slide deck, one line per click',
+    deckIntro: 'Step through it like slides: click or press → for the next line, ← to go back, P for the presenter view (notes and a clock). No sound or subtitles: you do the talking.',
+    deckPreview: 'Present in a new window',
+    deckLink: 'Share link',
+    deckLinkHint: 'Anyone with the link can open the deck, no sign-in needed. When you change the film, the deck follows.',
   },
 };
 

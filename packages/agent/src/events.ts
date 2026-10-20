@@ -66,9 +66,9 @@ export type StudioEvent =
   | { type: 'error'; message: string; stage?: Stage }
   /** the film is drawn and checked: it plays in the live preview. An mp4 is made only on export (then `done`) */
   | { type: 'ready'; duration: number }
-  /** the page the exported film opens on was chosen (its first frame); null: the first page. An mp4 made before shows
-   *  the old cover, so it is out of date */
-  | { type: 'cover'; page: string | null }
+  /** the page the exported film opens on was chosen (its first frame); null: the first page. `image`: a picture the
+   *  user gave instead (its file in the project). An mp4 made before shows the old cover, so it is out of date */
+  | { type: 'cover'; page: string | null; image?: string }
   /** the film was exported to mp4 */
   | { type: 'done'; video: string; videoNoSubs: string; duration: number; /** the copies in the user's export folder */ saved?: { withSubs: string; noSubs: string };
       /** the final plan's segment file names (no `.subs`), when a renderer named them: a hosted export is charged by these.

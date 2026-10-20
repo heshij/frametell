@@ -28,10 +28,10 @@ const passing = (seen: string[]): AgentRuntime => ({
 });
 
 /** the page step of a revision of p01, with the engine's checks stubbed: they find nothing */
-async function revise(answer: (n: number, dir: string) => string | { flag: string }) {
+async function revise(answer: (n: number, dir: string) => string | { flag: string }, written = true) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ft-revise-'));
   fs.mkdirSync(path.join(dir, 'pages'));
-  fs.writeFileSync(path.join(dir, 'pages/p01.js'), PAGE);
+  if (written) fs.writeFileSync(path.join(dir, 'pages/p01.js'), PAGE);
   const sent: string[] = [], seen: string[] = [];
   const d = new Director({ dir, style: 'chalkboard', brief: { durationSec: 60, lang: 'zh', replyLang: 'zh' }, runtime: fake(sent, answer), reviewer: { runtime: passing(seen) } });
   Object.assign(d.project, { check: async () => ({ issues: [], sheet: 'sheet.jpg' }), lint: async () => [], snap: async () => 'sheet.jpg', commit: async () => undefined });
@@ -68,4 +68,13 @@ test('a page that already shows the change says so, and is neither asked again n
   assert.equal(sent.length, 1);
   assert.equal(page.status, 'flagged');
   assert.deepEqual(page.issues, [{ from: 'agent', msg: '这一页的数字本来就是黄色的' }]);
+});
+
+test('a page the change adds is drawn from nothing', async () => {
+  // seen: the planner added an end card to the storyboard; reading its code (none yet) failed it on every Continue
+  const { sent, page, code } = await revise((n, dir) => { fs.writeFileSync(path.join(dir, 'pages/p01.js'), PAGE); return '画好了。'; }, false);
+  assert.equal(code, PAGE);
+  assert.equal(page.status, 'ok');
+  assert.match(sent[0], /This page is new[\s\S]*在开头加一个标题/);
+  assert.doesNotMatch(sent[0], /is already written/);
 });

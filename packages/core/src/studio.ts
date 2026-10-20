@@ -286,6 +286,8 @@ export class Studio {
   /** the page the exported film opens on (its first frame); null: the first page. False while the film is being made.
    *  `log: false`: no `cover` event (a host that keeps the film's events itself logs it) */
   setCover(id: string, page: string | null, o?: { log?: boolean }) { this.store.read(id); return this.store.runner(id).setCover(page, o); }
+  /** a picture of the user's own as the cover (JPEG, PNG or WebP): its name in the project, undefined when refused */
+  setCoverImage(id: string, data: Uint8Array, o?: { log?: boolean }) { this.store.read(id); return this.store.runner(id).setCoverImage(data, o); }
   approve(id: string, feedback?: string) { return this.store.runner(id).approve(feedback); }
   /** `why`: the host stopped it for want of credits, so the film says that instead of "paused" */
   stop(id: string, why?: 'credits') { this.store.runner(id).stop(why); }

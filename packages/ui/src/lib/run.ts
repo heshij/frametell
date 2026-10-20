@@ -70,6 +70,8 @@ export interface RunView {
   stale?: boolean;
   /** the page the exported film opens on, when one other than the first was chosen */
   cover?: string;
+  /** a picture the user gave as that first frame instead (its file in the project) */
+  coverImage?: string;
   /** an mp4 export in progress, since when */
   exporting?: number;
   error?: string;
@@ -278,6 +280,7 @@ function step(v: RunView, e: LoggedEvent): RunView {
     // another cover chosen: an mp4 made before opens on the old one
     case 'cover':
       r.cover = e.page ?? undefined;
+      r.coverImage = e.image;
       if (r.video) r.stale = true;
       return r;
     case 'done': {

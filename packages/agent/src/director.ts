@@ -10,7 +10,7 @@ import { KIT_CHECK_FILE, KIT_FILE, KIT_KEPT, keepComponents, kitIssues, kitPlan,
 import { addUsage, emptyUsage, type AgentRuntime, type AgentSession, type SessionOptions, type Thinking, type TokenUsage, type TurnResult } from './runtime/types.js';
 import type { PageIssue, PageStatus, Stage, StudioEvent } from './events.js';
 import { designedFonts, designedIssues, designedLook, type Look } from './look.js';
-import { SIGN_OFF_HOLD, signsOff } from './brand.js';
+import { SIGN_OFF_HOLD, cornerMark, signsOff } from './brand.js';
 import { ENGINE_DIR } from '@frametell/engine/tools/project.mjs';
 import { freeze, openIn } from './projectfs.js';
 import { briefFile, runResearch, type ResearchLimits } from './research/research.js';
@@ -140,6 +140,11 @@ ${code}
 \`\`\`
 Change only what needs changing, with edit; **never rewrite the whole file with write**. **Put all the edits in one reply** (one reply can call edit several times), each with finish: true: you're done once they apply, no reply needed and no need to read the file again; the check screenshots will show the result.
 If this page already shows the change, or the change says nothing this page can do, don't go looking for what was meant (other files, the film's history, other folders): change nothing and call flag with one sentence for the user, in the language you reply in, saying what you found.`;
+
+/** a page the change adds (the planner put it in the storyboard): it has no code yet, so it is drawn like any new page */
+const addedNote = (fix: string) => `
+
+This page is new: the film is finished and the user's change adds it. What it should be: ${fix}`;
 
 // Pages are drawn at medium thinking, drafts and check rounds alike; on a gateway's …-high model that means its …-medium
 // sibling. Most of a page's time was the model thinking before writing: on the same pages a -high draft took 170–220 s
@@ -396,7 +401,7 @@ export class Director {
     })() : {};
     // a film that ends on its brand's sign-off holds longer after its last line, so the logo is seen in silence
     const signOff = (() => { try { return signsOff(this.o.brief.brand, this.project.storyboard().pages); } catch { return false; } })();
-    this.setMeta({ style: this.o.style, lang: this.o.brief.lang ?? 'zh', voice: this.o.voice, gap: 0.8, pace: { maxHold: 1.0, gap: 0.8, ...(signOff ? { tail: SIGN_OFF_HOLD } : {}) }, extras: list, look: this.o.look ?? this.designed()?.look, ...gl });
+    this.setMeta({ style: this.o.style, lang: this.o.brief.lang ?? 'zh', voice: this.o.voice, gap: 0.8, pace: { maxHold: 1.0, gap: 0.8, ...(signOff ? { tail: SIGN_OFF_HOLD } : {}) }, extras: list, look: this.o.look ?? this.designed()?.look, mark: cornerMark(this.o.brief.brand, signOff) ?? false, ...gl });
   }
 
   // ── this film's own components (kit.ts) ─────────────────────────────────────────────────────
@@ -655,14 +660,17 @@ export class Director {
     let s: AgentSession | undefined;
     try {
       s = await this.session(`page-${id}`, pageSystem(this.o.style, styleExtras(this.o.style), this.o.brief.preferences, this.o.brief.styleNotes, this.designed()?.card, this.filmKit()), MAX.pageTurns, was?.ref, undefined, { answers: [FLAG] });
-      const fix = this.state.revision?.[id];
+      // a page the change adds has no code yet (seen: an end card added to the storyboard; reading its code failed the
+      // page on every Continue): it is drawn from nothing, with the change as its brief
+      const added = this.state.revision?.[id] !== undefined && !was && !this.project.exists(`pages/${id}.js`);
+      const fix = added ? undefined : this.state.revision?.[id];
       // a revision's page already exists, so "is there a file" says nothing: what tells is whether the code changed
       // (seen: a revision whose edits never landed was checked, passed and shown as done, on the old page)
       const before = fix && !this.wordsChanged ? this.project.read(`pages/${id}.js`) : undefined;
       const unchanged = () => before !== undefined && this.project.read(`pages/${id}.js`) === before;
       let r: TurnResult | undefined, declined: string | undefined;
       if (!was) {
-        r = await this.send(s, pagePrompt(sb, id, t, this.o.brief.lang, this.o.brief.replyLang, !!fix, this.o.brief.brand) + (fix ? revisionNote(id, fix, this.project.read(`pages/${id}.js`)) : '') + this.unseen(`page-${id}`), undefined, PAGE_THINKING);
+        r = await this.send(s, pagePrompt(sb, id, t, this.o.brief.lang, this.o.brief.replyLang, !!fix, this.o.brief.brand) + (fix ? revisionNote(id, fix, this.project.read(`pages/${id}.js`)) : added ? addedNote(this.state.revision![id]) : '') + this.unseen(`page-${id}`), undefined, PAGE_THINKING);
         if (!this.project.exists(`pages/${id}.js`)) r = await this.send(s, `pages/${id}.js does not exist yet; write it, then stop.`, undefined, PAGE_THINKING);
         if (!this.project.exists(`pages/${id}.js`)) throw new Error(r.error || this.say('没有写出页面文件', 'No page file was written'));
         // the agent found nothing to change (already so, or nothing this page can do): it says why instead of searching

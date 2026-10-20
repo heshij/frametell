@@ -20,7 +20,7 @@
       p.placeholder.querySelector('b').textContent = p.pg.section || p.pg.title || p.pg.id;
     }
   }
-  let layout, pages = [], frame, stage, chrome, subs;
+  let layout, pages = [], frame, stage, chrome, subs, mark;
 
   function visual(id, fn) { visuals[id] = fn; }
 
@@ -45,6 +45,32 @@
     chrome.el.style.opacity = smooth(0.2, 1.2, t).toFixed(3);
     // a camera push-in could slide content under the header: fade in a paper band behind it
     chrome.el.classList.toggle('masked', cur.sh.cams.length > 0 && t > cur.pg.start + (cur.sh.cams[0].at - 0.2));
+  }
+
+  // ── the brand's corner mark: META.mark = { src, dark?, corner: 'tr' | 'br' | 'bl', w, h, signOff? } ──
+  // The same small logo in the same corner of every page, above the pages and not moved by the camera. It fades in with
+  // the film and out before the brand's sign-off (signOff: the last page ends on the large logo), so one logo shows at a time.
+  const CORNERS = { tr: ['top', 'right'], br: ['bottom', 'right'], bl: ['bottom', 'left'] };
+  function buildMark(parent, m) {
+    if (!m || typeof m.src !== 'string' || !CORNERS[m.corner]) return null;
+    const paper = window.STYLE?.palette?.paper;
+    const dark = /^#[0-9a-f]{6}$/i.test(paper || '') && [1, 3, 5].reduce((s, i, k) => s + parseInt(paper.slice(i, i + 2), 16) * [0.299, 0.587, 0.114][k], 0) < 110;
+    const src = dark && m.dark ? m.dark : m.src;
+    PV.preload?.(src);
+    // fits a box of the corner: wide logos by width, square and tall ones by height
+    const k = Math.min(170 / (m.w || 1), (STAGE.portrait ? 90 : 84) / (m.h || 1));
+    const el = h('img', 'brand-mark', null, parent);
+    el.src = src; el.alt = '';
+    el.style.width = `${Math.round((m.w || 1) * k)}px`; el.style.height = `${Math.round((m.h || 1) * k)}px`;
+    const [v, hz] = CORNERS[m.corner];
+    el.style[v] = `${v === 'top' ? 44 : STAGE.portrait ? 300 : 40}px`; el.style[hz] = '48px';
+    return { el, m };
+  }
+  function updateMark(t) {
+    const last = pages[pages.length - 1].pg;
+    const FO = SCRIPT.META?.fadeOut ?? TIMING.FADE_OUT;
+    const gone = mark.m.signOff ? smooth(last.speechEnd, last.speechEnd + 0.4, t) : (FO > 0 ? smooth(last.end - FO, last.end, t) : 0);
+    mark.el.style.opacity = (smooth(0.3, 1.1, t) * (1 - gone)).toFixed(3);
   }
 
   // ── subtitles ─────────────────────────────────────────────
@@ -87,7 +113,7 @@
     pages = [];
     errors.length = 0;
     PV.unknownColors.clear();
-    for (const el of frame.querySelectorAll('.chrome, .subs')) el.remove();
+    for (const el of frame.querySelectorAll('.chrome, .subs, .brand-mark')) el.remove();
     layout = TIMING.layout(SCRIPT.PAGES, { ...(SCRIPT.META || {}), voice: SCRIPT.VOICE });
     const only = opts.only ? new Set(opts.only) : null;
     for (const pg of layout.pages) {
@@ -109,6 +135,7 @@
       }
     }
     chrome = (SCRIPT.META || {}).chrome === true ? buildChrome(frame) : null;   // META.chrome: true → series header (META.course · META.no | section)
+    mark = buildMark(frame, (SCRIPT.META || {}).mark);
     if (opts.subs) { subs = h('div', 'subs', '<span></span>', frame); }
   }
 
@@ -151,6 +178,7 @@
       } finally { PV.colorPage = undefined; }
     }
     if (chrome) updateChrome(t);
+    if (mark) updateMark(t);
     updateSubs(t);
     for (const fn of window.FRAME_HOOKS || []) fn(t, layout);   // extras can draw things that live across pages (a host character)
   }

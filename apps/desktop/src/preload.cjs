@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('studioBridge', {
   frames: (id, times) => call('frames', id, times),
   export: (id) => call('export', id),
   setCover: (id, page) => call('setCover', id, page),
+  setCoverImage: async (id, file) => { const image = await call('setCoverImage', id, new Uint8Array(await file.arrayBuffer())); if (!image) throw new Error('refused'); return image; },
   subscribe: (id, since, onEvent, onState) => {
     const subId = Math.random().toString(36).slice(2);
     let last = since;

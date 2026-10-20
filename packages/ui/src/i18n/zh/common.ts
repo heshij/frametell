@@ -27,7 +27,7 @@ export default {
   },
   requestFailed: '请求失败（{status}）',
   styles: {
-    'warm-story': '暖调叙事插画', study: '安静书房', whiteboard: '白板手绘', chalkboard: '黑板', 'tech-dark': '科技深色',
+    'warm-story': '暖调插画', study: '安静书房', whiteboard: '白板手绘', chalkboard: '黑板', 'tech-dark': '科技深色',
   },
   /** 内置风格的一句话说明；不在这里的风格用服务端给的说明 */
   styleSummaries: {
@@ -51,5 +51,11 @@ export default {
     title: '把片子导出成 mp4（带字幕和不带字幕两版）',
     exportLatest: '导出最新版',
     exportMp4: '导出 mp4',
+    deck: '演示',
+    deckTitle: '把片子当演示文稿放：点一下出下一句的画面',
+    deckIntro: '像幻灯片一样一步一步放：点击或按 → 出下一句的画面，← 回退，P 打开演讲者视图（提词和计时）。没有声音和字幕，由你来讲。',
+    deckPreview: '在新窗口演示',
+    deckLink: '分享链接',
+    deckLinkHint: '发给别人就能打开演示，不用登录。片子改了，链接里的演示也跟着变。',
   },
 };

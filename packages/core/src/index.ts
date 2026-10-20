@@ -7,3 +7,4 @@ export { writeIn, readIn, listIn } from '@frametell/agent';
 export { tr, locale, systemLocale } from './i18n.js';
 /** the sample shipped with a built-in voice (no key needed to hear it) */
 export { bundledSample as voiceSample } from '@frametell/voice';
+export { COVER_IMAGE } from './runner.js';

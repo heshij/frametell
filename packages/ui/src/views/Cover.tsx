@@ -1,36 +1,43 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ImageIcon, Loader2 } from 'lucide-react';
+import { Check, ImageIcon, ImageUp, Loader2 } from 'lucide-react';
 import { client, type ProjectView, type Timeline } from '../lib/client';
 import { isWorking, relPath, type RunView } from '../lib/run';
 import { t as tr, useT } from '../i18n';
 
 // The exported film's cover: the page it opens on. A film starts on a blank stage, and a chat app or a file browser shows
 // a video by its first frame; the engine draws the chosen page, settled, as that frame (render.mjs). The first page
-// unless another is chosen.
+// unless another is chosen, or a picture of the user's own (shown over the whole frame, cropped to fill it).
 
-/** the cover button and its pop-over of the film's pages; nothing for a one-page film or a host that can't set it */
+/** a picture the engine can draw as the cover, and how large (the hosts refuse anything else) */
+const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'], IMAGE_BYTES = 10 << 20;
+const UPLOAD = '__upload';
+
+/** the cover button and its pop-over of the film's pages (and a picture to upload); nothing for a host that can't set
+ *  it, or for a one-page film where no picture can be given */
 export function CoverPicker({ run, project, ids, tl, size = '' }: { run: RunView; project: ProjectView; ids: string[]; tl: Timeline | null; size?: string }) {
   useT();
   const [open, setOpen] = useState(false);
   const [at, setAt] = useState<{ top: number; left: number; width: number; maxHeight: number }>();
-  /** the page asked for, until the film's events say it is the cover */
-  const [chosen, setChosen] = useState<string>();
+  /** the page (or the picture, `image`) asked for, until the film's events say it is the cover */
+  const [chosen, setChosen] = useState<{ page?: string; image?: string }>();
   const [saving, setSaving] = useState<string>();
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<'busy' | 'image'>();
+  const file = useRef<HTMLInputElement>(null);
   /** frames cut for the pages with no small picture yet (page id → project-relative path) */
   const [cut, setCut] = useState<Record<string, string>>({});
   const trigger = useRef<HTMLButtonElement>(null);
   const grid = useRef<HTMLDivElement>(null);
-  useEffect(() => setChosen(undefined), [run.cover]);
-  const named = chosen ?? run.cover;
-  const current = named && ids.includes(named) ? named : ids[0];
+  useEffect(() => setChosen(undefined), [run.cover, run.coverImage]);
+  const image = chosen ? chosen.image : run.coverImage;
+  const named = chosen ? chosen.page : run.cover;
+  const current = image ? undefined : named && ids.includes(named) ? named : ids[0];
   const place = () => {
     const el = trigger.current; if (!el) return;
     const r = el.getBoundingClientRect(), width = Math.min(560, innerWidth - 16), top = r.bottom + 6;
     setAt({ top, left: Math.max(8, Math.min(r.right - width, innerWidth - width - 8)), width, maxHeight: Math.max(220, innerHeight - top - 12) });
   };
-  const close = (refocus = true) => { setOpen(false); setFailed(false); if (refocus) trigger.current?.focus(); };
+  const close = (refocus = true) => { setOpen(false); setFailed(undefined); if (refocus) trigger.current?.focus(); };
   useEffect(() => {
     if (!open) return;
     // the selected page takes the focus, as a radio group does
@@ -60,21 +67,37 @@ export function CoverPicker({ run, project, ids, tl, size = '' }: { run: RunView
       .catch(() => {});
     return () => { live = false; };
   }, [missing.join(','), project.id]);
-  if (!client.setCover || ids.length < 2) return null;
-  const n = ids.indexOf(current) + 1;
+  const canUpload = !!client.setCoverImage;
+  if (!client.setCover || !ids.length || (ids.length < 2 && !canUpload)) return null;
+  const n = current ? ids.indexOf(current) + 1 : 0;
 
   const choose = async (id: string) => {
     if (saving) return;
     if (id === current) { close(); return; }
-    setSaving(id); setFailed(false);
+    setSaving(id); setFailed(undefined);
     try {
       // the first page is no choice at all: the file goes, and a page added before it later is not taken for it
       if (!(await client.setCover!(project.id, id === ids[0] ? null : id))) throw new Error('refused');
-      setChosen(id);
+      setChosen({ page: id === ids[0] ? undefined : id });
       close();
-    } catch { setFailed(true); }
+    } catch { setFailed('busy'); }
     finally { setSaving(undefined); }
   };
+  const upload = async (f: File | undefined) => {
+    if (!f || saving) return;
+    if (!IMAGE_TYPES.includes(f.type) || f.size > IMAGE_BYTES) { setFailed('image'); return; }
+    setSaving(UPLOAD); setFailed(undefined);
+    try {
+      setChosen({ image: await client.setCoverImage!(project.id, f) });
+      close();
+    } catch { setFailed('busy'); }
+    finally { setSaving(undefined); }
+  };
+  const mark = (busy: boolean) => (
+    <span className="absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-accent text-paper shadow-[0_1px_3px_rgb(0_0_0/0.35)]" aria-hidden>
+      {busy ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} strokeWidth={3} />}
+    </span>
+  );
   // arrows move along the pages (up and down by a row), Home and End to either end; the focus follows, the choice waits
   // for Enter or Space
   const keys = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -93,7 +116,7 @@ export function CoverPicker({ run, project, ids, tl, size = '' }: { run: RunView
     <>
       <button ref={trigger} type="button" className={`fs-btn fs-btn-ghost ${size}`} disabled={isWorking(run)} aria-haspopup="dialog" aria-expanded={open}
         onClick={() => (open ? close() : (place(), setOpen(true)))} title={tr('stage.cover.title')}>
-        <ImageIcon size={14} aria-hidden /> {tr('stage.cover.button', { n })}
+        <ImageIcon size={14} aria-hidden /> {image ? tr('stage.cover.buttonImage') : tr('stage.cover.button', { n })}
       </button>
       {open && at && createPortal((
         <div role="dialog" data-cover aria-labelledby="cover-heading" style={{ top: at.top, left: at.left, width: at.width, maxHeight: at.maxHeight }}
@@ -104,6 +127,27 @@ export function CoverPicker({ run, project, ids, tl, size = '' }: { run: RunView
           </div>
           <div ref={grid} role="radiogroup" aria-labelledby="cover-heading" onKeyDown={keys}
             className="grid min-h-0 grid-cols-2 gap-x-2.5 gap-y-3 overflow-y-auto px-4 pb-4 pt-0.5 sm:grid-cols-3">
+            {canUpload && (
+              // a picture of the user's own, first (a long film's pages would bury it): shown as it will fill the frame; picking
+              // it again chooses another
+              <button type="button" role="radio" aria-checked={!!image} tabIndex={image ? 0 : -1} onClick={() => file.current?.click()}
+                aria-label={tr(image ? 'stage.cover.replace' : 'stage.cover.upload')} aria-busy={saving === UPLOAD}
+                className="group min-w-0 rounded-[10px] p-1 text-left outline-none transition-colors duration-150 hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent/60">
+                <span className={`relative block aspect-video overflow-hidden rounded-lg bg-paper-2 transition-shadow duration-150 ${image ? 'ring-2 ring-accent' : 'ring-1 ring-line group-hover:ring-line-2'}`}>
+                  {image
+                    ? <img src={client.fileUrl(project, image)} alt="" decoding="async" className="h-full w-full object-cover" />
+                    : (
+                      <span className="absolute inset-1.5 grid place-items-center rounded-md border border-dashed border-line-2 text-ink-3 transition-colors group-hover:text-ink-2" aria-hidden>
+                        <ImageUp size={18} />
+                      </span>
+                    )}
+                  {(image || saving === UPLOAD) && mark(saving === UPLOAD)}
+                </span>
+                <span className="mt-1.5 flex items-baseline gap-1.5 px-0.5">
+                  <span className={`min-w-0 truncate text-[12px] ${image ? 'font-medium text-accent-ink' : 'text-ink-2'}`}>{tr(image ? 'stage.cover.replace' : 'stage.cover.upload')}</span>
+                </span>
+              </button>
+            )}
             {ids.map((id, i) => {
               const on = id === current, src = still(id), section = run.storyboard?.pages.find((x) => x.id === id)?.section;
               return (
@@ -114,11 +158,7 @@ export function CoverPicker({ run, project, ids, tl, size = '' }: { run: RunView
                     {src
                       ? <img src={src} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                       : <span className="absolute inset-1.5 rounded-md border border-dashed border-line-2" aria-hidden />}
-                    {(on || saving === id) && (
-                      <span className="absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-accent text-paper shadow-[0_1px_3px_rgb(0_0_0/0.35)]" aria-hidden>
-                        {saving === id ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} strokeWidth={3} />}
-                      </span>
-                    )}
+                    {(on || saving === id) && mark(saving === id)}
                   </span>
                   <span className="mt-1.5 flex items-baseline gap-1.5 px-0.5">
                     <span className={`shrink-0 text-[12px] tabular ${on ? 'font-medium text-accent-ink' : 'text-ink-2'}`}>{tr('stage.pageN', { n: i + 1 })}</span>
@@ -129,9 +169,10 @@ export function CoverPicker({ run, project, ids, tl, size = '' }: { run: RunView
               );
             })}
           </div>
+          {canUpload && <input ref={file} type="file" accept={IMAGE_TYPES.join(',')} hidden onChange={(e) => { void upload(e.target.files?.[0]); e.target.value = ''; }} />}
           {(failed || run.video) && (
             <p className={`border-t border-line px-4 py-2.5 text-[12px] leading-relaxed ${failed ? 'text-seal' : 'text-ink-3'}`} role={failed ? 'alert' : undefined}>
-              {failed ? tr('stage.cover.failed') : tr('stage.cover.reexport')}
+              {failed === 'image' ? tr('stage.cover.badImage') : failed ? tr('stage.cover.failed') : tr('stage.cover.reexport')}
             </p>
           )}
         </div>

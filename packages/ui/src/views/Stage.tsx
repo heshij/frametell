@@ -3,7 +3,7 @@ import { ArrowLeft, Captions, CaptionsOff, Check, ChevronLeft, ChevronRight, Dow
 import { client, downloadUrl, type PageTiming, type ProjectView, type Timeline } from '../lib/client';
 import { drawnPages, film, finished, relPath, savedAt, STAGE_NAME, STAGES, type DrawnSeen, type PageView, type RunView } from '../lib/run';
 import { shownIssues } from '../lib/lint';
-import { ExportControls, RevealFile } from './Export';
+import { DeckControls, ExportControls, RevealFile } from './Export';
 import { CoverPicker } from './Cover';
 import { pageName } from '../lib/describe';
 import { Lightbox } from './Lightbox';
@@ -569,7 +569,7 @@ export function Stage({ run, project, selected, onSelect, playKey, pagePlay, onR
                 className={`whitespace-nowrap rounded-md px-3 py-1 text-[12.5px] font-medium transition-colors ${view === k ? 'bg-surface text-ink shadow-sm' : 'text-ink-3 hover:text-ink'}`}>{l}</button>
             ))}
           </div>
-          {!cut && finished(run) && <span className="ml-auto flex flex-wrap items-center justify-end gap-2"><span className="hidden text-[12px] text-ink-3 md:inline">{run.stale ? tr('stage.revisedPreview') : tr('stage.livePreview')}</span><CoverPicker run={run} project={project} ids={ids} tl={tl} size="fs-btn-sm" /><ExportControls run={run} project={project} size="fs-btn-sm" /></span>}
+          {!cut && finished(run) && <span className="ml-auto flex flex-wrap items-center justify-end gap-2"><span className="hidden text-[12px] text-ink-3 md:inline">{run.stale ? tr('stage.revisedPreview') : tr('stage.livePreview')}</span><CoverPicker run={run} project={project} ids={ids} tl={tl} size="fs-btn-sm" /><DeckControls project={project} size="fs-btn-sm" /><ExportControls run={run} project={project} size="fs-btn-sm" /></span>}
           {cut && (
             <span className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
               <CoverPicker run={run} project={project} ids={ids} tl={tl} size="fs-btn-sm" />
@@ -578,6 +578,7 @@ export function Stage({ run, project, selected, onSelect, playKey, pagePlay, onR
               </button>
               <a className="fs-btn fs-btn-secondary fs-btn-sm" href={downloadUrl(project, relPath(cut, project.id), !subs)} download><Download size={13} aria-hidden /> {subs ? tr('stage.downloadSubs') : tr('stage.downloadNoSubs')}</a>
               <RevealFile file={savedAt(exported!, cut)} size="fs-btn-sm" />
+              <DeckControls project={project} size="fs-btn-sm" />
             </span>
           )}
         </div>

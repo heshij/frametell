@@ -28,15 +28,19 @@
   const libs = (meta.libs || []).map((f) => NM + f);
   css.push(...libs.filter((f) => f.endsWith('.css')));
   const js = [NM + 'roughjs/bundled/rough.js', `${KIT}styles/${style}/style.js`, `${KIT}runtime/look.js`]
-    .concat(['timing', 'core', 'text', 'doodles', 'widgets', 'live', 'tokens', 'shell3d', 'three', 'media', 'player'].map((f) => `${KIT}runtime/${f}.js`))
+    .concat(['timing', 'core', 'text', 'doodles', 'widgets', 'live', 'tokens', 'shell3d', 'three', 'media', 'player', 'deck'].map((f) => `${KIT}runtime/${f}.js`))
     .concat((meta.vendor || []).map((v) => `${KIT}vendor/${v}.js`))
     .concat(libs.filter((f) => !f.endsWith('.css')))
     .concat(meta.voice ? ['voice.js'] : [])      // real narration timing from engine/tools/tts.mjs (SCRIPT.VOICE)
-    .concat(meta.extras || [])
+    // an extra the engine ships is named engine/… (the project's link): taken from the engine itself, wherever that is
+    .concat((meta.extras || []).map((f) => (f.startsWith('engine/') ? KIT + f.slice(7) : f)))
     .concat(KIT + 'runtime/engine.js')
     .concat(SCRIPT.PAGES.map((p) => `${portrait ? 'pages-portrait' : 'pages'}/${p.id}.js`))
     .concat(KIT + 'runtime/main.js');
-  document.write(css.map((h) => `<link rel="stylesheet" href="${h}">`).join('') + `
+  // every script asked for at once: written scripts run in order, and a browser sees the next one only once the one
+  // before has run, so without these a far server's round trip was paid once per script (some thirty in a row)
+  const preload = js.map((s) => `<link rel="preload" as="script" href="${s}">`).join('');
+  document.write(preload + css.map((h) => `<link rel="stylesheet" href="${h}">`).join('') + `
 <svg width="0" height="0" style="position:absolute"><defs>
   <filter id="wc" x="-5%" y="-5%" width="110%" height="110%">
     <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="7" result="n"/>

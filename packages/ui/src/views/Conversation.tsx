@@ -8,7 +8,7 @@ import { Crest } from '../components/Logo';
 import { FilmCredits, orShort, reportShort, ShortNotice, useShort, useSpent } from '../components/Credits';
 import { STYLE_NAME } from '../lib/styles';
 import { Composer, RefChip } from './Composer';
-import { ExportControls, RevealFile } from './Export';
+import { DeckControls, ExportControls, RevealFile } from './Export';
 import type { Ref } from '../lib/refs';
 import { t, useT } from '../i18n';
 
@@ -260,6 +260,7 @@ function DoneCard({ run, project, onPlay }: { run: RunView; project: ProjectView
         <div className="mt-3.5 flex flex-wrap gap-2">
           <button className="fs-btn fs-btn-accent" onClick={onPlay}><Clapperboard size={14} aria-hidden /> {t('conversation.done.play')}</button>
           <ExportControls run={run} project={project} />
+          <DeckControls project={project} />
         </div>
         <p className="mt-3 text-[12.5px] text-ink-3">{t('conversation.done.hint')}</p>
       </div>

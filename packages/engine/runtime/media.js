@@ -26,6 +26,7 @@
     cache.set(src, im);
     return im;
   }
+  PV.preload = need;   // the engine's own pictures (the brand's corner mark) wait for the first frame the same way
   const fonts = document.fonts, readyGet = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(document.fonts), 'ready').get;
   Object.defineProperty(fonts, 'ready', { configurable: true, get() { return Promise.all([readyGet.call(fonts), ...pending]).then(() => fonts); } });
 

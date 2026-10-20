@@ -15,6 +15,17 @@ import { withRefs } from './refs.js';
 import type { LoggedEvent, ProjectMeta, ProjectSummary, RunStatus } from './types.js';
 import { resolveLocale, tr } from './i18n.js';
 
+/** a picture the user gave as the film's cover, as the project keeps it (the engine's render.mjs reads the same names) */
+export const COVER_IMAGE = /^cover-[0-9a-f]{12}\.(jpg|png|webp)$/;
+const COVER_IMAGE_BYTES = 10 << 20;
+/** jpg, png or webp by the file's first bytes (never by its name or what the browser said it was) */
+function imageType(b: Uint8Array): 'jpg' | 'png' | 'webp' | undefined {
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'jpg';
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'png';
+  if (Buffer.from(b.subarray(0, 4)).toString('latin1') === 'RIFF' && Buffer.from(b.subarray(8, 12)).toString('latin1') === 'WEBP') return 'webp';
+  return undefined;
+}
+
 /** the language someone wrote in, if it can be told: Chinese as soon as there is a Chinese character, English from a
  * word of Latin letters; undefined for a link, numbers or nothing */
 const langOf = (text: string): 'zh' | 'en' | undefined => (/[\u3400-\u9fff]/.test(text) ? 'zh' : /[a-z]{3}/i.test(text.replace(/https?:\/\/\S+/g, '')) ? 'en' : undefined);
@@ -51,7 +62,7 @@ export class Projects {
   create(input: Omit<ProjectMeta, 'id' | 'createdAt' | 'updatedAt' | 'materials'>, files: { name: string; data: Buffer }[]): ProjectMeta {
     const id = `${new Date().toISOString().slice(0, 10)}-${crypto.randomBytes(6).toString('hex')}`;
     const dir = this.dir(id);
-    createProject(dir, { title: input.title, style: input.style });
+    createProject(dir, { title: input.title, style: input.style, lang: input.lang });
     fs.mkdirSync(path.join(dir, 'materials'), { recursive: true });
     fs.mkdirSync(path.join(dir, '.studio'), { recursive: true });
     const materials: string[] = [];
@@ -258,17 +269,33 @@ class Runner {
     const st = studioFile(this.dir, 'state.json');
     const s = fs.existsSync(st) ? JSON.parse(fs.readFileSync(st, 'utf8')) : {};
     const status: RunStatus = this.status !== 'running' && heldElsewhere(this.dir) ? 'running' : this.status;
-    const cover = this.cover();
-    return { status, stage: s.stage as string | undefined, video: s.video ? path.relative(this.dir, s.video) : undefined, stale: s.video ? s.exported === false : undefined, ...(cover ? { cover } : {}) };
+    const cover = this.cover(), coverImage = this.coverImage();
+    return { status, stage: s.stage as string | undefined, video: s.video ? path.relative(this.dir, s.video) : undefined, stale: s.video ? s.exported === false : undefined, ...(cover ? { cover } : {}), ...(coverImage ? { coverImage } : {}) };
   }
 
-  /** the page chosen as the film's cover (cover.json, read through the project's own files only); absent: the first */
-  cover(): string | undefined {
+  /** cover.json, read through the project's own files only: { page } or { image } */
+  private coverJson(): { page?: unknown; image?: unknown } {
     const f = openProjectFile(this.dir, 'cover.json');
-    if (!f) return undefined;
-    try { const page = JSON.parse(readFd(f.fd).toString('utf8')).page; return typeof page === 'string' && /^[\w-]{1,40}$/.test(page) ? page : undefined; }
-    catch { return undefined; }
+    if (!f) return {};
+    try { const j = JSON.parse(readFd(f.fd).toString('utf8')); return j && typeof j === 'object' ? j : {}; }
+    catch { return {}; }
     finally { fs.closeSync(f.fd); }
+  }
+
+  /** the page chosen as the film's cover; absent: the first (or a picture of the user's own, coverImage) */
+  cover(): string | undefined {
+    const page = this.coverJson().page;
+    return typeof page === 'string' && /^[\w-]{1,40}$/.test(page) ? page : undefined;
+  }
+
+  /** the picture the user gave as the film's cover (cover-<hash>.<ext> in the project), when it is there */
+  coverImage(): string | undefined {
+    const image = this.coverJson().image;
+    if (typeof image !== 'string' || !COVER_IMAGE.test(image)) return undefined;
+    const f = openProjectFile(this.dir, image);
+    if (!f) return undefined;
+    fs.closeSync(f.fd);
+    return image;
   }
 
   /**
@@ -279,17 +306,47 @@ class Runner {
   setCover(page: string | null, o: { log?: boolean } = {}): boolean {
     if (this.status === 'running' || heldElsewhere(this.dir)) return false;
     if (page !== null && !/^[\w-]{1,40}$/.test(page)) return false;
-    if ((page ?? undefined) === this.cover()) return true;
+    if ((page ?? undefined) === this.cover() && !this.coverImage()) return true;
+    this.dropCoverImages();
     if (page === null) fs.rmSync(path.join(this.dir, 'cover.json'), { force: true });
     else writeIn(this.dir, 'cover.json', JSON.stringify({ page }) + '\n');
+    this.coverChanged();
+    // a host that keeps the film's events itself (the run is elsewhere) logs it there instead
+    if (o.log !== false) this.emit({ type: 'cover', page });
+    return true;
+  }
+
+  /**
+   * A picture of the user's own as the film's cover, drawn as its first frame in place of a page (JPEG, PNG or WebP, at
+   * most 10 MB). Kept as cover-<hash>.<ext>, so a new one never shows an old one cached. Undefined while the film is
+   * being made, or for a file that is no such picture; else the file's name in the project.
+   */
+  setCoverImage(data: Uint8Array, o: { log?: boolean } = {}): string | undefined {
+    if (this.status === 'running' || heldElsewhere(this.dir)) return undefined;
+    const ext = imageType(data);
+    if (!ext || data.length > COVER_IMAGE_BYTES) return undefined;
+    const image = `cover-${crypto.createHash('sha1').update(data).digest('hex').slice(0, 12)}.${ext}`;
+    if (image === this.coverImage()) return image;
+    this.dropCoverImages();
+    writeIn(this.dir, image, data);
+    writeIn(this.dir, 'cover.json', JSON.stringify({ image }) + '\n');
+    this.coverChanged();
+    if (o.log !== false) this.emit({ type: 'cover', page: null, image });
+    return image;
+  }
+
+  /** the pictures given as covers before (only regular files: a link the agent planted is never followed, only gone) */
+  private dropCoverImages() {
+    for (const f of fs.readdirSync(this.dir)) if (COVER_IMAGE.test(f)) fs.rmSync(path.join(this.dir, f), { force: true });
+  }
+
+  /** an mp4 already made opens on the old cover: out of date */
+  private coverChanged() {
     const st = studioFile(this.dir, 'state.json');
     try {
       const s = JSON.parse(fs.readFileSync(st, 'utf8'));
       if (s.video && s.exported !== false) { s.exported = false; writeIn(this.dir, '.studio/state.json', JSON.stringify(s, null, 2), { record: true }); }
     } catch { /* no state yet */ }
-    // a host that keeps the film's events itself (the run is elsewhere) logs it there instead
-    if (o.log !== false) this.emit({ type: 'cover', page });
-    return true;
   }
 
   private emit = (e: StudioEvent) => {

@@ -7,11 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-10-19
+
 ### Added
+
+- A film can be presented as a slide deck. "Present" beside the export button opens the preview in deck mode (`index.html?deck`, or `window.DECK_MODE`, `runtime/deck.js`): each spoken line is one step, and a click, → or Space plays the picture up to just before the next line and holds it there, so the animations of a line come in one click at a time. ← goes back a step, ↑ ↓ jump a page, Home and End go to either end, F is full screen. It is silent and without subtitles: the presenter speaks. P opens a presenter window with the line to say, the next one and a clock; the two windows follow each other. The step is kept in the address (`#12`), and a phone can swipe or tap. On a hosted service the popover also gives the deck's link to share: the preview's own signed address, which opens without signing in and follows the film as it changes.
+
+- The engine's scripts are fetched at once instead of one after another (`boot.js` writes a preload for each before the scripts): a preview on a far server boots in a few seconds instead of paying a round trip per script.
+
+- An extra the engine ships, named `engine/…` in `META.extras`, is loaded from the engine itself, wherever it is served from, not only through the project's `engine` link.
+
+- A brand can keep its logo small in a corner of every page (`BrandBrief.corner`: `tr`, `br` or `bl`; top-left is where each page's title sits). The engine draws it itself (`META.mark`, set by the director from the brief): its wordless mark, else its logo, the dark-ground logo on a dark paper, above the page and still while the camera moves. It fades in with the film and out when the last line ends, before the closing sign-off, so one logo shows at a time. The planner, the page agents and the reviewer are told the corner is taken: pages keep it clear, and the reviewer fails a page that crowds it, not one that shows it.
 
 - A film in a designed style (one whose look the director designs for each film) of 8 pages or more now gets its own components before its pages are drawn. The storyboard lists the things the film draws on 3 pages or more (`look.kit`: a map, a globe, a recurring mark), a session writes them once in the film's look as `extras/film-kit.js`, and they are checked on a sheet of their own (lint, determinism and a reviewer). The ones that pass are loaded for every page and listed first in each page's components, so the film shows each thing the same way on every page and no page draws it from nothing. It is written while the film is narrated, so it adds no wait. Once checked, the file is fixed: the agents' write and edit tools refuse it, and a change made any other way is put back before a page is checked. A kit that fails leaves the pages to draw everything themselves, as before.
 
 - An exported film opens on a cover instead of a blank stage. Its first frame is a page at rest (the moment its thumbnail is cut), so a chat app or a file browser that shows a video by its first frame shows a picture; one frame of it is not seen when the film plays. It is the first page unless another is chosen: "Cover" beside the workbench's export button lists the film's pages to pick from (`Studio.setCover(id, page)`, saved as `cover.json` in the project, a `cover` event). Choosing another cover marks an mp4 already made out of date, and the next export draws only the film's first segment again.
+
+- The cover can be an image of your own. "Upload image", first in the cover picker, takes a JPEG, PNG or WebP of up to 10 MB; the exported film's first frame shows it filling the frame (cropped to the film's shape) instead of a page. It is kept in the project as `cover-<hash>.<ext>` and named in `cover.json` (`{ "image": … }`), checked by its bytes, never followed through a link (`Studio.setCoverImage(id, data)`, `PUT /api/projects/:id/cover/image`, a `cover` event with `image`). Choosing a page again removes it.
 
 ### Fixed
 
@@ -20,6 +32,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - While a film is being made, the workbench's players no longer reload the whole film each time a page starts, finishes or goes round its check again. They reloaded dozens of times during a film, the page you were playing was cut off and stuck near its start, and the browser could slow to a crawl. A player now picks up a new version only when a page has been drawn.
 
 - The preview no longer shakes at the start of a page when a line's audio gets stuck. A line whose file came without a length or byte ranges (a hosted film's files sometimes do while it is being made) could be told to play and never finish seeking; the picture kept to that line all the same and was pulled back to its start every few frames. A line now leads the picture only while it is playing. A stuck line holds the picture, is fetched again after 1.5 s, and is skipped after 4 s, so the film plays on.
+
+- A change that adds a page to the storyboard (a new end card, say) no longer fails that page on every Continue. Its revision note read the page's file, which does not exist yet; a page a change adds is now drawn from nothing.
+
+- Narration no longer fails with a zero-length "audible sound" cut when a take's trailing silence stops a few milliseconds before the end of its file.
+
+- A new film's placeholder opening is in the film's language. Until the director writes the script, an English film showed a Chinese first page and lines in the film strip; the template's opening (section, greeting, title line, first question) is now filled in English for an English film (`createProject(dir, { lang })`, passed from the film's `lang` by Studio and the CLI) and stays Chinese for a Chinese one.
+
+- The `warm-story` style is labelled "Warm illustration" in the English interface (it said "Warm storybook") and its short Chinese name, as the agent and hosted services name it.
 
 ## [0.7.2] - 2026-10-16
 
@@ -335,7 +355,8 @@ The first release of Frametell: a local, open-source studio that turns an idea o
 - The npm packages are not published yet; install from source (see the README).
 - The Claude Agent SDK and Codex runtimes are in the code but not offered; every film runs on the built-in agent, which works with any provider.
 
-[Unreleased]: https://github.com/sitor-ai/frametell/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/sitor-ai/frametell/compare/v0.7.3...HEAD
+[0.7.3]: https://github.com/sitor-ai/frametell/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/sitor-ai/frametell/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/sitor-ai/frametell/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/sitor-ai/frametell/compare/v0.6.0...v0.7.0
