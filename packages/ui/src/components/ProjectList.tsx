@@ -4,6 +4,7 @@ import { client, type ProjectView, type StyleInfo } from '../lib/client';
 import { go } from '../lib/hooks';
 import { STAGE_NAME, type Stage } from '../lib/run';
 import { STYLE_SWATCH } from '../lib/styles';
+import { track } from '../lib/track';
 import { intlTag, t } from '../i18n';
 
 // The videos on the home page: filed under groups (a tab for each, the group a project names), each row with a menu to
@@ -119,7 +120,7 @@ export function ProjectList({ projects, loading, styles, reload }: { projects?: 
 
   const remove = async (id: string) => {
     setRemoving({ id, busy: true });
-    try { await client.deleteProject(id); setRemoving(undefined); reload(); }
+    try { await client.deleteProject(id); track('film-delete', { project: id }); setRemoving(undefined); reload(); }
     catch (e) { setRemoving({ id, error: (e as Error).message }); }
   };
   const move = async (ids: string[], g: string) => {
@@ -131,7 +132,7 @@ export function ProjectList({ projects, loading, styles, reload }: { projects?: 
   const removeMany = async () => {
     setBulk({ ask: true, busy: true });
     const failed: string[] = [];
-    for (const p of chosen) { try { await client.deleteProject(p.id); } catch (e) { failed.push(`${p.title}: ${(e as Error).message}`); } }
+    for (const p of chosen) { try { await client.deleteProject(p.id); track('film-delete', { project: p.id, many: true }); } catch (e) { failed.push(`${p.title}: ${(e as Error).message}`); } }
     reload();
     if (failed.length) setBulk({ error: failed.join('\n') }); else stopPicking();
   };

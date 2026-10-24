@@ -1,8 +1,9 @@
-// A film's own components (the film kit). A designed style (styles/<id>/fonts.json: the director designs each film's
-// look) has no kit.js of its own, so every page drew the film's recurring things from nothing: in a 45-page film the
-// same map flag was written 28 times, and no two pages drew the globe alike. When the storyboard lists the things that
-// recur (`look.kit`), one session writes them as components (extras/film-kit.js) before the pages are drawn, they are
-// checked once on a sheet of their own, and every page calls them.
+// A film's own components (the film kit). The pages are drawn side by side, each by a session of its own, so each drew
+// the film's recurring things from nothing: in a 45-page film the same map flag was written 28 times and no two pages
+// drew the globe alike; in a 5-page film the kettle was red on one page and blue on the next. A style's kit.js draws the
+// style's own marks, never the film's subject. When the storyboard lists the things that recur (`look.kit`), one
+// session writes them as components (extras/film-kit.js) before the pages are drawn, they are checked once on a sheet
+// of their own, and every page calls them. Any style, any length: the same thing on two pages must look the same.
 import fs from 'node:fs';
 import path from 'node:path';
 import { ENGINE_DIR } from '@frametell/engine/tools/project.mjs';
@@ -10,8 +11,8 @@ import { ENGINE_DIR } from '@frametell/engine/tools/project.mjs';
 /** one thing the film draws on several pages, as the storyboard lists it */
 export interface KitItem { name: string; what: string; pages: string[] }
 
-/** a film shorter than this is drawn without a kit: writing one costs about a page and a half */
-export const KIT_MIN_PAGES = 8;
+/** a thing on fewer pages than this is drawn by its page: it has nothing to match */
+export const KIT_MIN_PAGES = 2;
 export const KIT_MAX = 8;
 /** the components, where the pages load them from (META.extras) */
 export const KIT_FILE = 'extras/film-kit.js';
@@ -21,6 +22,21 @@ export const KIT_CHECK_FILE = 'extras/kit-check.js';
 export const KIT_STAGE = '.studio/kit';
 /** the kit as it was checked, put back if a page changes it */
 export const KIT_KEPT = '.studio/film-kit.js';
+/** each component is written by a session of its own, all at once, in a file of its own: the components (KIT_FILE) and
+ *  the check page (KIT_CHECK_FILE) are put together from them */
+export const kitPart = (name: string) => `extras/kit/${name}.js`;
+/** the lines that draw component `name` on the check page */
+export const kitPartCheck = (name: string) => `extras/kit/${name}.check.js`;
+
+/** where component i of n is drawn on the check page: a grid over the stage above the subtitle band */
+export function kitCell(i: number, n: number): { i: number; x: number; y: number; w: number; h: number } {
+  const cols = Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols);
+  const w = Math.floor((1920 - 120) / cols), h = Math.floor((900 - 80) / rows);
+  return { i, x: 60 + (i % cols) * w, y: 60 + Math.floor(i / cols) * h, w, h };
+}
+
+/** the check page, from each component's own lines (each in a block of its own, so their names never clash) */
+export const kitCheckPage = (parts: string[]) => `ENGINE.visual('kit', (P) => {\n${parts.map((p) => `  {\n${p.trim().split('\n').map((l) => '    ' + l).join('\n')}\n  }`).join('\n')}\n});\n`;
 
 const NAME = /^[a-z][A-Za-z0-9]{1,23}$/;
 
@@ -79,13 +95,13 @@ export function kitIssues(look: unknown, pageIds: string[]): string[] {
     const pages = Array.isArray(o.pages) ? o.pages : [];
     const unknown = pages.filter((p) => typeof p !== 'string' || !ids.has(p));
     if (unknown.length) out.push(`\`look.kit\`: ${name} names pages the storyboard does not have: ${unknown.join(', ')}`);
-    else if (pages.length < 3) out.push(`\`look.kit\`: ${name} is on ${pages.length} page${pages.length === 1 ? '' : 's'}: a component is for something drawn on 3 or more; leave it out`);
+    else if (pages.length < KIT_MIN_PAGES) out.push(`\`look.kit\`: ${name} is on ${pages.length} page${pages.length === 1 ? '' : 's'}: a component is for something drawn on ${KIT_MIN_PAGES} or more; leave it out`);
   }
   return out;
 }
 
-/** whether this film gets a kit: a designed style, enough pages, and at least two things that recur */
-export const kitWanted = (designed: boolean, pages: number, plan: KitItem[]) => designed && pages >= KIT_MIN_PAGES && plan.length >= 2;
+/** whether this film gets a kit: more than one page, and at least one thing that recurs */
+export const kitWanted = (pages: number, plan: KitItem[]) => pages >= KIT_MIN_PAGES && plan.length >= 1;
 
 /** the components a kit file defines (`B.name = function`), in order */
 export const componentNames = (src: string): string[] => [...src.matchAll(/^\s*B\.(\w+)\s*=\s*function\b/gm)].map((m) => m[1]);
@@ -125,7 +141,7 @@ const CHECK_HOLD = 2.6;
  * per component, written from the check page the kit session wrote. The engine's own check (lint, determinism, a
  * contact sheet) then runs there as on any page. Returns the stage's folder.
  */
-export function kitStage(dir: string, o: { style: string; lang: string; look?: unknown; items: KitItem[]; kit: string; check: string }): string {
+export function kitStage(dir: string, o: { style: string; lang: string; look?: unknown; items: KitItem[]; kit: string; check: string; extras?: string[]; gl?: Record<string, unknown> }): string {
   const stage = path.join(dir, KIT_STAGE);
   fs.rmSync(stage, { recursive: true, force: true });
   fs.mkdirSync(path.join(stage, 'pages'), { recursive: true });
@@ -134,7 +150,8 @@ export function kitStage(dir: string, o: { style: string; lang: string; look?: u
   fs.writeFileSync(path.join(stage, 'extras', 'film-kit.js'), o.kit);
   // the check page as written, its id made `kit` whatever the session called it
   fs.writeFileSync(path.join(stage, 'pages', 'kit.js'), o.check.replace(/ENGINE\.visual\(\s*['"][^'"]*['"]/, "ENGINE.visual('kit'"));
-  const META = { title: 'kit', name: 'kit', style: o.style, lang: o.lang, gap: 0.5, extras: ['extras/film-kit.js'], ...(o.look ? { look: o.look } : {}) };
+  // the style's own components load first, as on the film's pages: the film's may build on them
+  const META = { title: 'kit', name: 'kit', style: o.style, lang: o.lang, gap: 0.5, extras: [...(o.extras ?? []), 'extras/film-kit.js'], ...(o.look ? { look: o.look } : {}), ...o.gl };
   const cues = o.items.map((x) => ({ t: x.name, hold: CHECK_HOLD }));
   const PAGES = [{ id: 'kit', section: 'kit', title: '', cues }];
   fs.writeFileSync(path.join(stage, 'script.js'), `(function (root) {\n  const META = ${JSON.stringify(META)};\n  const PAGES = ${JSON.stringify(PAGES)};\n  root.SCRIPT = { META, PAGES };\n})(typeof window !== 'undefined' ? window : globalThis);\n`);

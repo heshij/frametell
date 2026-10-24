@@ -8,6 +8,7 @@ import conversation from './conversation';
 import run from './run';
 import picker from './picker';
 import providers from './providers';
+import assets from './assets';
 
-const en: typeof zh = { common, home, settings, workbench, stage, conversation, run, picker, providers };
+const en: typeof zh = { common, home, settings, workbench, stage, conversation, run, picker, providers, assets };
 export default en;

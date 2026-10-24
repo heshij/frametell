@@ -7,7 +7,7 @@ import crypto from 'node:crypto';
 import { createProject, linkProject } from '@frametell/engine/tools/project.mjs';
 import { createCatalog } from '@frametell/models';
 import { elevenLabsTts, volcengineTts } from '@frametell/voice';
-import { createWeb, Director, findSources, hasSources, offlineWeb, openProjectFile, piRuntime, Project, readFd, writeIn, type AgentRuntime, type DirectorOptions, type Renderer, type StudioEvent, type Storyboard, type UserRef } from '@frametell/agent';
+import { createWeb, userAssets, Director, findSources, hasSources, offlineWeb, openProjectFile, piRuntime, Project, readFd, writeIn, type AgentRuntime, type DirectorOptions, type Renderer, type StudioEvent, type Storyboard, type UserRef } from '@frametell/agent';
 import type { Config, ConfigStore } from './config.js';
 import { prepareMaterials } from './materials.js';
 import { applyProxy } from './net.js';
@@ -519,7 +519,7 @@ class Runner {
     this.emit({ type: 'user', text: said, ...(refs.length ? { refs } : {}) });
     // answer in the language the user writes in: the saved interface language can differ from the panel they type into
     this.replyLang = langOf(said) ?? this.replyLang;
-    const text = withRefs(said, refs);   // what the director reads: the references, then the words
+    const text = withRefs(said, refs, userAssets(this.dir));   // what the director reads: the references, then the words
     const voice = refs.find((r): r is Extract<UserRef, { kind: 'voice' }> => r.kind === 'voice');
     if (voice) {
       const rest = !!said || refs.some((r) => r.kind !== 'voice');

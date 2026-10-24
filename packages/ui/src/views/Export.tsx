@@ -6,6 +6,7 @@ import { useNow } from '../lib/hooks';
 import { clock, film, isWorking, relPath, type RunView } from '../lib/run';
 import { useT } from '../i18n';
 import { orShort } from '../components/Credits';
+import { track } from '../lib/track';
 
 // The live preview is the film; an mp4 is made only when asked for. One control for it wherever it appears.
 
@@ -17,13 +18,13 @@ export function ExportControls({ run, project, size = '' }: { run: RunView; proj
   const cut = film(run);
   if (cut) return (
     <>
-      <a className={`fs-btn fs-btn-secondary ${size}`} href={downloadUrl(project, relPath(cut.path, project.id))} download><Download size={14} aria-hidden /> {t('common.export.download')}</a>
+      <a className={`fs-btn fs-btn-secondary ${size}`} href={downloadUrl(project, relPath(cut.path, project.id))} download onClick={() => track('download', { project: project.id, subs: true })}><Download size={14} aria-hidden /> {t('common.export.download')}</a>
       <RevealFile file={cut.saved?.withSubs ?? cut.path} size={size} />
     </>
   );
   if (run.exporting) return <span className={`fs-btn fs-btn-secondary pointer-events-none ${size}`} role="status"><Loader2 size={14} className="animate-spin" aria-hidden /> {t('common.export.exporting', { time: clock(now - run.exporting) })}</span>;
   return (
-    <button className={`fs-btn fs-btn-secondary ${size}`} disabled={asking || isWorking(run)} onClick={async () => { setAsking(true); try { await client.export(project.id).catch(orShort(project.id)); } finally { setAsking(false); } }}
+    <button className={`fs-btn fs-btn-secondary ${size}`} disabled={asking || isWorking(run)} onClick={async () => { setAsking(true); track('export-click', { project: project.id, stale: !!run.stale }); try { await client.export(project.id).catch(orShort(project.id)); } finally { setAsking(false); } }}
       title={run.stale ? t('common.export.staleTitle') : t('common.export.title')}>
       <Download size={14} aria-hidden /> {run.stale ? t('common.export.exportLatest') : t('common.export.exportMp4')}
     </button>
@@ -60,7 +61,7 @@ export function DeckControls({ project, size = '' }: { project: ProjectView; siz
   if (!hosted) return <button type="button" className={`fs-btn fs-btn-ghost ${size}`} title={t('common.export.deckTitle')} onClick={present}><Presentation size={14} aria-hidden /> {t('common.export.deck')}</button>;
 
   const link = deckUrl(project);
-  const copy = async () => { try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* the link is selectable */ } };
+  const copy = async () => { track('share', { project: project.id, how: 'link' }); try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* the link is selectable */ } };
   return (
     <span ref={root} className="relative inline-flex">
       <button type="button" className={`fs-btn fs-btn-ghost ${size}`} aria-expanded={open} title={t('common.export.deckTitle')} onClick={() => (open ? setOpen(false) : (place(), setOpen(true)))}><Presentation size={14} aria-hidden /> {t('common.export.deck')}</button>

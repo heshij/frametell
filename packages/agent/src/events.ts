@@ -30,7 +30,8 @@ export type UserRef =
   | { kind: 'page'; page: string; label: string }
   | { kind: 'line'; page: string; label: string; at: number; text: string }
   | { kind: 'frame'; page: string; label: string; at: number; path: string; text?: string }
-  | { kind: 'file'; label: string; path: string; image: boolean }
+  /** `asset`: one of the user's pictures for the film (under assets/user/), to be placed in it rather than read */
+  | { kind: 'file'; label: string; path: string; image: boolean; asset?: boolean }
   /** the narrator to use from now on: the server switches the film's voice and narrates it again, nothing is redrawn */
   | { kind: 'voice'; label: string; provider: 'volcengine' | 'elevenlabs'; id: string; name: string };
 

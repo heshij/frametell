@@ -185,3 +185,27 @@ test('research out of turns is asked for its brief; one that fails does not stop
     assert.ok(events.some((e) => e.type === 'note'));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('read_file never drops text: a long line goes on in rows, and a full reply says where to read on mid-line', async () => {
+  const dir = tmp();
+  try {
+    // a parsed PDF's paragraph is one line: 1,200 characters, then a line far longer than one reply holds
+    const para = Array.from({ length: 120 }, (_, i) => `w${String(i).padStart(3, '0')}xxxxx`).join('');
+    const huge = Array.from({ length: 8000 }, (_, i) => `h${String(i).padStart(4, '0')}xxxx`).join('');
+    fs.writeFileSync(path.join(dir, 'paper.md'), `# Title\n${para}\n${huge}\nthe end\n`);
+    const { tools } = researchTools({ mounts: [{ name: 'm', root: dir, about: 'the material' }], web: noWeb, limits: { searches: 1, pages: 1, minutes: 5 }, onFinish: () => {} });
+    const read = tools.find((x) => x.name === 'read_file')!;
+    let text = '', args: Record<string, unknown> = { path: 'm/paper.md' };
+    for (let calls = 0; calls < 20; calls++) {
+      const got = await out(read, args);
+      const rows = got.split('\n').filter((l) => /^\s*\d+[ +] /.test(l));
+      for (const r of rows) text += (r.slice(5, 6) === '+' ? '' : '\n') + r.slice(7);
+      assert.ok(got.length < 31_000, 'each reply keeps to its budget');
+      const next = /read on with offset (\d+)(?: and part (\d+))?/.exec(got);
+      if (!next) break;
+      args = { path: 'm/paper.md', offset: +next[1], ...(next[2] ? { part: +next[2] } : {}) };
+    }
+    assert.equal(text.slice(1), `# Title\n${para}\n${huge}\nthe end\n`);
+    assert.ok((await out(read, { path: 'm/paper.md', offset: 2 })).includes('    2+ '), 'a long line goes on in rows marked with +');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowUp, AudioLines, Clock, FileText, Film, Layers, Loader2, Paperclip, Pencil, Plus, Quote, Sparkles, TriangleAlert, Upload, X } from 'lucide-react';
+import { ArrowUp, AudioLines, Clock, FileText, Film, ImagePlus, Layers, Loader2, Paperclip, Pencil, Plus, Quote, Sparkles, TriangleAlert, Upload, X } from 'lucide-react';
 import { client, type LibraryGroup, type ProjectView } from '../lib/client';
 import { refKey, toSend, type Ref } from '../lib/refs';
+import { openAssets } from '../lib/assets';
 import { finished, isWorking, type RunView } from '../lib/run';
 import { Lightbox, type LightItem } from './Lightbox';
 import { FilmSettings } from '../components/FilmSettings';
 import { reportShort } from '../components/Credits';
 import { useT } from '../i18n';
+import { track } from '../lib/track';
 
 // The message box to the director. Above the words sits a tray of references — the pages, lines and frames picked on
 // the workbench, files attached, pasted or dropped — so a change request points at exactly what it means.
@@ -36,6 +38,9 @@ const writeQueue = (id: string, q: Queued[]) => { try { if (q.length) localStora
 /** the run has to rest this long before the queue goes: the log of a run under way arrives just after the page opens,
  * and a step can hand over to the next with a beat where nothing runs */
 const SETTLE_MS = 1500;
+
+/** a change about pages (a page, a line, a frame of one in the tray) or about the whole film, as a hosted service is told */
+const scopeOf = (refs: Ref[]): 'page' | 'film' => (refs.some((r) => r.kind === 'page' || r.kind === 'line' || r.kind === 'frame') ? 'page' : 'film');
 
 /** one queued message: its words (edited in place) and what it carries */
 function QueuedRow({ q, project, onSave, onRemove }: { q: Queued; project: ProjectView; onSave: (text: string) => void; onRemove: () => void }) {
@@ -88,6 +93,7 @@ export function RefChip({ r, project, onRemove, onOpen, pending, error, name, pr
           ? <span className="relative h-5 w-[30px] shrink-0 overflow-hidden rounded-[4px] bg-ink/10" style={whole ? { background: GROUND[whole] } : undefined}><img src={img} alt="" className={`h-full w-full ${whole ? 'object-contain p-px' : 'object-cover'}`} />{pending && <span className="absolute inset-0 flex items-center justify-center bg-black/40"><Loader2 size={11} className="animate-spin text-white" aria-hidden /></span>}</span>
           : <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[4px] bg-ink/[0.06]">{pending ? <Loader2 size={11} className="animate-spin" aria-hidden /> : <Icon size={11} aria-hidden />}</span>}
         <span className="min-w-0 max-w-[180px] truncate">{label}</span>
+        {r?.kind === 'file' && r.asset && <span className="shrink-0 rounded-[4px] bg-accent-soft px-1 py-px text-[10px] font-medium leading-tight text-accent-ink">{t('assets.badge')}</span>}
       </Body>
       {onRemove && <button type="button" onClick={onRemove} aria-label={t('conversation.composer.remove', { label })} className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-ink/[0.08] hover:text-ink"><X size={12} aria-hidden /></button>}
     </span>
@@ -130,6 +136,9 @@ function AttachMenu({ onUpload, onPick, onApply }: { onUpload: () => void; onPic
           className="absolute bottom-[calc(100%+8px)] left-0 z-30 w-[min(340px,100%)] overflow-hidden rounded-xl border border-line bg-surface p-1.5 shadow-[0_-12px_32px_-8px_rgb(0_0_0/0.35),0_2px_6px_rgb(0_0_0/0.12)] animate-pop [transform-origin:bottom_left]">
           <button type="button" role="menuitem" autoFocus className={row} onClick={() => { close(); onUpload(); }}>
             <Upload size={14} className="shrink-0 text-ink-3" aria-hidden /><span className="min-w-0 flex-1 truncate">{t('conversation.composer.library.upload')}</span>
+          </button>
+          <button type="button" role="menuitem" className={row} onClick={() => { setOpen(false); openAssets(); }} title={t('assets.composerEntryTitle')}>
+            <ImagePlus size={14} className="shrink-0 text-accent-ink" aria-hidden /><span className="min-w-0 flex-1 truncate">{t('assets.composerEntry')}</span>
           </button>
           <div className="max-h-[min(360px,48vh)] overflow-y-auto">
             {error
@@ -181,6 +190,16 @@ export function Composer({ run, project, viewing, openSettings }: { run: RunView
   const running = isWorking(run);
   const ref = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
+  // a change being written, told to a hosted service (lib/track.ts) when it starts (the box taken, a page handed over)
+  // and when it goes; refs only. The box taking the focus back after a send is not a new start
+  const composing = useRef(false), refocus = useRef(false), projectId = useRef(project.id);
+  projectId.current = project.id;
+  const startEdit = (scope: 'page' | 'film') => {
+    if (composing.current || refocus.current) return;
+    composing.current = true;
+    track('edit-open', { project: projectId.current, scope });
+  };
+  const takeFocusBack = () => { refocus.current = true; ref.current?.focus(); refocus.current = false; };
   const focus = () => requestAnimationFrame(() => { const el = ref.current; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } });
 
   const add = (r: Ref) => setItems((cur) => {
@@ -192,8 +211,8 @@ export function Composer({ run, project, viewing, openSettings }: { run: RunView
   });
   // the workbench hands over pages, lines and frames; “change this page”-style prompts still prefill the words
   useEffect(() => {
-    const onRef = (e: Event) => { add((e as CustomEvent<Ref>).detail); focus(); };
-    const onCompose = (e: Event) => { const t = (e as CustomEvent<string>).detail; setText((cur) => (cur.trim() ? cur : t)); focus(); };
+    const onRef = (e: Event) => { const r = (e as CustomEvent<Ref>).detail; startEdit(scopeOf([r])); add(r); focus(); };
+    const onCompose = (e: Event) => { const t = (e as CustomEvent<string>).detail; startEdit('page'); setText((cur) => (cur.trim() ? cur : t)); focus(); };
     addEventListener('studio:ref', onRef); addEventListener('studio:compose', onCompose);
     return () => { removeEventListener('studio:ref', onRef); removeEventListener('studio:compose', onCompose); };
   }, []);
@@ -239,10 +258,12 @@ export function Composer({ run, project, viewing, openSettings }: { run: RunView
   const clear = () => { setText(''); for (const x of items) if (x.preview?.startsWith('blob:')) URL.revokeObjectURL(x.preview); setItems([]); };
   const send = async () => {
     if (!canSend) return;
+    track('edit-submit', { project: project.id, scope: scopeOf(refs), refs: refs.length, queued: running || queue.length > 0 });
+    composing.current = false;
     // the film is being made (or a queue is still waiting its turn): this one waits too, after the others
     if (running || queue.length) {
       setQueue((q) => [...q, { id: Math.random().toString(36).slice(2, 10), text: text.trim(), refs }]);
-      clear(); ref.current?.focus();
+      clear(); takeFocusBack();
       return;
     }
     setBusy(true);
@@ -252,7 +273,7 @@ export function Composer({ run, project, viewing, openSettings }: { run: RunView
     } catch (e) {
       // short of credits: the notice above says so, and what was written stays in the box to send again
       if (!reportShort(project.id, e)) setNote((e as Error).message);
-    } finally { setBusy(false); ref.current?.focus(); }
+    } finally { setBusy(false); takeFocusBack(); }
   };
 
   // the run at rest: the queue goes as one message (each would otherwise start a change of its own), the references
@@ -333,7 +354,7 @@ export function Composer({ run, project, viewing, openSettings }: { run: RunView
           </div>
         )}
         <label htmlFor="say" className="sr-only">{t('conversation.composer.label')}</label>
-        <textarea id="say" ref={ref} rows={2} value={text} onChange={(e) => setText(e.target.value)} placeholder={placeholder}
+        <textarea id="say" ref={ref} rows={2} value={text} onChange={(e) => setText(e.target.value)} placeholder={placeholder} onFocus={() => startEdit(scopeOf(refs))}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); }
             else if (e.key === 'Backspace' && !text && items.length && e.currentTarget.selectionStart === 0) setItems((cur) => cur.slice(0, -1));
@@ -344,6 +365,7 @@ export function Composer({ run, project, viewing, openSettings }: { run: RunView
           {client.library && client.attachFrom
             ? <AttachMenu onUpload={() => picker.current?.click()} onPick={fromLibrary} onApply={applyBrand} />
             : <button type="button" className="fs-icon-btn" onClick={() => picker.current?.click()} aria-label={t('conversation.composer.attach')} title={t('conversation.composer.attachTitle')}><Paperclip size={15} /></button>}
+          <button type="button" className="fs-icon-btn" onClick={openAssets} aria-label={t('assets.composerEntry')} title={t('assets.composerEntryTitle')}><ImagePlus size={15} /></button>
           <input ref={picker} type="file" multiple accept={ACCEPT} className="sr-only" tabIndex={-1} aria-hidden onChange={(e) => { upload([...(e.target.files || [])]); e.target.value = ''; }} />
           <FilmSettings project={project} narrated={narrated} current={voice} pending={switchTo} openSettings={openSettings}
             onPick={(v) => {

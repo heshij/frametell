@@ -566,3 +566,22 @@ test('a picture of the user\'s own as the cover: kept by its hash, checked by it
     off();
   } finally { fs.rmSync(dataDir, { recursive: true, force: true }); }
 });
+
+test('a new film takes the user\'s pictures before it starts, and a refused one refuses the film', () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'frametell-assets-'));
+  try {
+    const studio = new Studio({ dataDir, config: memoryConfig({ defaults: { model: 'anthropic/x' } as Config['defaults'] }), linkProjects: false });
+    const svg = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 10"/>');
+    const p = studio.createProject({ topic: 'tides' }, [], { start: false, assets: [{ name: 'Mark.svg', data: svg, note: 'our mark' }] });
+    const [a] = studio.assets(p.id);
+    assert.deepEqual({ name: a.name, note: a.note, type: a.type, w: a.w, h: a.h }, { name: 'Mark', note: 'our mark', type: 'svg', w: 30, h: 10 });
+    assert.equal(studio.updateAsset(p.id, a.file, { note: 'the mark' }).note, 'the mark');
+    studio.removeAsset(p.id, a.file);
+    assert.deepEqual(studio.assets(p.id), []);
+    assert.throws(() => studio.assets('../x'), /not found|不存在/);
+    assert.throws(() => studio.addAsset('2026-01-01-nope', { name: 'a.svg', data: svg }), /not found|不存在/);
+    const before = studio.projects().length;
+    assert.throws(() => studio.createProject({ topic: 'tides' }, [], { start: false, assets: [{ name: 'doc.pdf', data: new TextEncoder().encode('%PDF') }] }));
+    assert.equal(studio.projects().length, before, 'no film made half-way');
+  } finally { fs.rmSync(dataDir, { recursive: true, force: true }); }
+});

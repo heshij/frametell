@@ -10,12 +10,12 @@ import { Hono, type Context } from 'hono';
 import { serve } from '@hono/node-server';
 import { streamSSE } from 'hono/streaming';
 import { getCookie } from 'hono/cookie';
-import { DATA_DIR, Studio, tr, type LoggedEvent, type NewProjectInput } from '@frametell/core';
+import { DATA_DIR, Studio, tr, type LoggedEvent, type NewProjectInput, type NewUserAsset } from '@frametell/core';
 
 const UI_DIR = path.join(path.dirname(createRequire(import.meta.url).resolve('@frametell/ui/package.json')), 'dist');
 const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
+  '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif',
   '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf', '.wav': 'audio/wav', '.mp3': 'audio/mpeg', '.mp4': 'video/mp4',
   '.md': 'text/markdown; charset=utf-8', '.txt': 'text/plain; charset=utf-8', '.srt': 'text/plain; charset=utf-8',
 };
@@ -70,7 +70,16 @@ export function createServer(studio = new Studio(), opts: { token?: string } = {
     const files: { name: string; data: Uint8Array }[] = [];
     for (const v of form.getAll('materials')) if (typeof v !== 'string') files.push({ name: v.name, data: new Uint8Array(await v.arrayBuffer()) });
     const input = JSON.parse(String(form.get('input') || '{}')) as NewProjectInput;
-    const meta = studio.createProject(input, files);
+    // the user's pictures, each with its small copy in the same order when the panel made one (an empty part where it
+    // didn't), and its note
+    const thumbs = form.getAll('assetThumbs'), notes = form.getAll('assetNotes');
+    const assets: NewUserAsset[] = [];
+    for (const [i, v] of form.getAll('assets').entries()) {
+      if (typeof v === 'string') continue;
+      const t = thumbs[i], note = notes[i];
+      assets.push({ name: v.name, data: new Uint8Array(await v.arrayBuffer()), ...(t instanceof File && t.size ? { thumb: new Uint8Array(await t.arrayBuffer()) } : {}), ...(typeof note === 'string' && note ? { note } : {}) });
+    }
+    const meta = studio.createProject(input, files, { assets });
     return c.json({ ...meta, previewBase: previewBase(meta.id) }, 201);
   });
   app.get('/api/projects/:id/timeline', async (c) => c.json(await studio.timeline(c.req.param('id'))));
@@ -103,6 +112,23 @@ export function createServer(studio = new Studio(), opts: { token?: string } = {
     if (!(f instanceof File)) throw new Error(tr('没有收到文件', 'No file received'));
     return c.json(await studio.attach(c.req.param('id'), f.name, new Uint8Array(await f.arrayBuffer())));
   });
+
+  // the user's pictures for the film (素材)
+  app.get('/api/projects/:id/assets', (c) => c.json(studio.assets(c.req.param('id'))));
+  app.post('/api/projects/:id/assets', async (c) => {
+    const form = await c.req.formData();
+    const f = form.get('file'), thumb = form.get('thumb'), name = form.get('name'), note = form.get('note');
+    if (!(f instanceof File)) throw new Error(tr('没有收到文件', 'No file received'));
+    return c.json(studio.addAsset(c.req.param('id'), {
+      name: typeof name === 'string' && name.trim() ? name : f.name, data: new Uint8Array(await f.arrayBuffer()),
+      ...(typeof note === 'string' ? { note } : {}), ...(thumb instanceof File && thumb.size ? { thumb: new Uint8Array(await thumb.arrayBuffer()) } : {}),
+    }), 201);
+  });
+  app.patch('/api/projects/:id/assets/:file', async (c) => {
+    const { name, note } = (await c.req.json().catch(() => ({}))) as { name?: unknown; note?: unknown };
+    return c.json(studio.updateAsset(c.req.param('id'), c.req.param('file'), { ...(typeof name === 'string' ? { name } : {}), ...(typeof note === 'string' ? { note } : {}) }));
+  });
+  app.delete('/api/projects/:id/assets/:file', (c) => { studio.removeAsset(c.req.param('id'), c.req.param('file')); return c.json({ ok: true }); });
 
   // live events: replay after Last-Event-ID (or ?since=), then stream; a ping every 15s keeps proxies honest
   app.get('/api/projects/:id/events', (c) => {

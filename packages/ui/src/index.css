@@ -47,6 +47,12 @@
   .fs-chip[aria-pressed='true'], .fs-chip[aria-checked='true'] { @apply border-accent/60 bg-accent-soft text-accent-ink; }
   .fs-tag { @apply inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-1.5 py-[3px] font-mono text-[10.5px] font-medium leading-none; }
   .fs-kbd { @apply rounded-md border border-line bg-paper-2 px-1.5 py-0.5 font-mono text-[11px] text-ink-2; }
+  /* the ground under an asset's picture: a quiet checker, so a transparent logo shows its edges in either theme */
+  .fs-checker {
+    background-color: rgb(var(--fs-surface));
+    background-image: conic-gradient(rgb(var(--fs-ink) / 0.07) 25%, transparent 0 50%, rgb(var(--fs-ink) / 0.07) 0 75%, transparent 0);
+    background-size: 14px 14px;
+  }
   .tabular { font-variant-numeric: lining-nums tabular-nums; }
 }
 

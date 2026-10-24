@@ -10,6 +10,7 @@ import { offerRef } from '../lib/refs';
 import { useT } from '../i18n';
 import { FilmCredits, orShort } from '../components/Credits';
 import { hosted } from '../lib/client';
+import { openedFilm, track } from '../lib/track';
 
 const fmtK = (n: number) => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'K' : String(n));
 
@@ -87,6 +88,33 @@ export function Workbench({ id, openSettings }: { id: string; openSettings: (sec
   useEffect(() => { document.title = project.data ? `${project.data.title} · ${t('workbench.brand')}` : t('workbench.brand'); }, [project.data?.title, locale]);
 
   const running = isWorking(run);
+  // what is told to a hosted service (lib/track.ts), from refs: nothing here re-renders the workbench
+  // the film opened, as it stood: still being made, ready, or exported
+  const opened = project.data;
+  useEffect(() => {
+    if (!opened) return;
+    openedFilm(opened.id);
+    track('film-open', { project: opened.id, state: opened.video ? 'exported' : opened.status === 'done' ? 'ready' : 'running', status: opened.status });
+  }, [opened?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // the tab left while the film is being made (not ready yet), and how long until it came back: the stage it was at
+  // when left (the run's log stops while the tab is hidden, so it says nothing newer on the way back)
+  const making = useRef({ on: false, stage: '' });
+  making.current = { on: running && !finished(run), stage: run.current ?? (run.resuming ? 'resuming' : run.revising ? 'revising' : 'preparing') };
+  useEffect(() => {
+    let away: { at: number; stage: string } | undefined;
+    const on = () => {
+      if (document.hidden) {
+        if (!making.current.on || away) return;
+        away = { at: Date.now(), stage: making.current.stage };
+        track('wait-away', { project: id, stage: away.stage });
+      } else if (away) {
+        track('wait-back', { project: id, stage: away.stage, sec: Math.round((Date.now() - away.at) / 1000) });
+        away = undefined;
+      }
+    };
+    document.addEventListener('visibilitychange', on);
+    return () => document.removeEventListener('visibilitychange', on);
+  }, [id]);
   // Pause answers the click at once; the run says it has paused a moment later, once every page has stopped
   const [pausing, setPausing] = useState(false);
   useEffect(() => { if (!running) setPausing(false); }, [running]);

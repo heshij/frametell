@@ -46,3 +46,16 @@ test('a voice to switch to is applied by the server: kept when well formed, neve
   assert.equal(withRefs('语速再慢一点', [v]), '语速再慢一点');
   assert.doesNotMatch(withRefs('这页', [v, { kind: 'page', page: 'p02', label: '第 2 页' }]), /voice|云舟/);
 });
+
+test('a picture of the film\'s own is pointed at with its size and note, to be placed', () => {
+  const ref = { kind: 'file', label: 'Logo', path: 'assets/user/our-logo-0123456789.svg', image: true, asset: true };
+  assert.equal(cleanRefs([ref]).length, 1);
+  assert.equal(cleanRefs([{ ...ref, path: 'refs/x.png' }]).length, 0, 'an asset lives in assets/user/');
+  assert.equal(cleanRefs([{ ...ref, path: 'assets/user/thumbs/x.webp' }]).length, 0);
+  assert.equal(cleanRefs([{ ...ref, asset: 'yes' }]).length, 0);
+  const assets = [{ file: 'our-logo-0123456789.svg', name: 'Our logo', note: 'the <mark>', type: 'svg' as const, w: 600, h: 200, alpha: true, bytes: 1, addedAt: '' }];
+  const out = withRefs('放进片尾', cleanRefs([ref]), assets);
+  assert.match(out, /<asset path="assets\/user\/our-logo-0123456789.svg" w="600" h="200">Our logo — the &lt;mark&gt;; the user wants this in the film: place it with P.img<\/asset>/);
+  // gone from the list meanwhile: still pointed at, by its label
+  assert.match(withRefs('x', cleanRefs([ref])), /<asset path="assets\/user\/our-logo-0123456789.svg">Logo; the user wants this/);
+});

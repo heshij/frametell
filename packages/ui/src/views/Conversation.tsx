@@ -10,6 +10,7 @@ import { STYLE_NAME } from '../lib/styles';
 import { Composer, RefChip } from './Composer';
 import { DeckControls, ExportControls, RevealFile } from './Export';
 import type { Ref } from '../lib/refs';
+import { track } from '../lib/track';
 import { t, useT } from '../i18n';
 
 // ── small pieces ────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -280,8 +281,8 @@ function ExportLine({ it, project }: { it: Extract<FeedItem, { kind: 'export' }>
       <span className="text-ink-3 tabular">{took}</span>
       {it.status === 'done' && it.video && (
         <span className="flex gap-1.5">
-          <a className="fs-btn fs-btn-ghost fs-btn-sm" href={downloadUrl(project, relPath(it.video, project.id))} download><Download size={13} aria-hidden /> {t('conversation.export.withSubs')}</a>
-          {it.noSubs && <a className="fs-btn fs-btn-ghost fs-btn-sm" href={downloadUrl(project, relPath(it.noSubs, project.id), true)} download><Download size={13} aria-hidden /> {t('conversation.export.noSubs')}</a>}
+          <a className="fs-btn fs-btn-ghost fs-btn-sm" href={downloadUrl(project, relPath(it.video, project.id))} download onClick={() => track('download', { project: project.id, subs: true })}><Download size={13} aria-hidden /> {t('conversation.export.withSubs')}</a>
+          {it.noSubs && <a className="fs-btn fs-btn-ghost fs-btn-sm" href={downloadUrl(project, relPath(it.noSubs, project.id), true)} download onClick={() => track('download', { project: project.id, subs: false })}><Download size={13} aria-hidden /> {t('conversation.export.noSubs')}</a>}
           <RevealFile file={it.saved ?? it.video} size="fs-btn-sm" />
         </span>
       )}

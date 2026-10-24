@@ -11,6 +11,8 @@ import { Projects } from './runner.js';
 import { checkEnv } from './env.js';
 import { applyProxy } from './net.js';
 import { attach, cleanRefs } from './refs.js';
+import { addAsset, listAssets, prepareAsset, removeAsset, updateAsset, type NewUserAsset } from './assets.js';
+import { USER_ASSETS_MAX, type UserAsset } from '@frametell/agent';
 import type { UserRef, EnvCheck, LoggedEvent, ModelInfo, NewProjectInput, ProjectMeta, ProjectSummary, PublicSettings, SettingsPatch, StyleInfo, Voice, VoicesView } from './types.js';
 import { resolveLocale, tr } from './i18n.js';
 
@@ -185,8 +187,9 @@ export class Studio {
   /** create a project from materials and start it right away (it pauses at the storyboard for approval), unless
    * `o.start === false`, which only creates it (a host that runs it elsewhere starts it there). `o.brandFiles`: the
    * files of `input.brand`, written into assets/brand/ (only those its assets name); both are ignored unless the
-   * Studio was opened with `brand: true` */
-  createProject(input: NewProjectInput, files: MaterialFile[], o: { start?: boolean; brandFiles?: MaterialFile[] } = {}): ProjectMeta {
+   * Studio was opened with `brand: true`. `o.assets`: the user's pictures for the film, kept in assets/user/ before it
+   * starts (each checked first: one that is refused refuses the project, so none is made half-way) */
+  createProject(input: NewProjectInput, files: MaterialFile[], o: { start?: boolean; brandFiles?: MaterialFile[]; assets?: NewUserAsset[] } = {}): ProjectMeta {
     const cfg = this.config.load(), d = cfg.defaults;
     const model = input.model || d.model;
     const pages = input.pageModel ?? d.pageModel;
@@ -195,6 +198,8 @@ export class Studio {
     const said = input.notes?.trim();
     const brand = this.brands ? cleanBrand(input.brand) : undefined;
     if (!files.length && !said && !input.topic) throw new Error(tr('说一句想讲什么，或者附上资料', 'Say what the video is about, or attach some material'));
+    if ((o.assets?.length ?? 0) > USER_ASSETS_MAX) throw new Error(tr(`一个视频最多 ${USER_ASSETS_MAX} 个素材`, `A film holds at most ${USER_ASSETS_MAX} pictures`));
+    const pictures = (o.assets ?? []).map(prepareAsset);
     // without materials, the sentence the user wrote is the topic; it also names the project
     const topic = input.topic || (files.length ? undefined : said);
     const fromText = (t?: string) => {
@@ -223,6 +228,7 @@ export class Studio {
     // file rules like everything else written into it
     const named = new Set(brand?.assets.map((a) => a.file));
     for (const f of o.brandFiles ?? []) if (named.has(f.name)) writeIn(this.store.dir(meta.id), `${BRAND_DIR}/${f.name}`, f.data);
+    for (const p of pictures) addAsset(this.store.dir(meta.id), p);
     if (o.start !== false) void this.store.runner(meta.id).start();
     return meta;
   }
@@ -302,6 +308,20 @@ export class Studio {
   say(id: string, text: string, refs?: unknown) { return this.store.runner(id).say(text, cleanRefs(refs)); }
   /** save a file the user attached to a message; returns the reference to send with it */
   attach(id: string, name: string, data: Uint8Array): Promise<UserRef> { const meta = this.store.read(id); return attach(this.store.dir(id), name, data, meta.lang ?? 'zh'); }
+
+  // ── the user's pictures for a film (素材): assets/user/, listed in its assets.json ──
+  /** the film's pictures, as its list is now */
+  assets(id: string): UserAsset[] { return listAssets(this.projectDir(id)); }
+  /** keep a picture in the film; the same content already there: that one, with the new name and note */
+  addAsset(id: string, a: NewUserAsset): UserAsset { return addAsset(this.projectDir(id), a); }
+  updateAsset(id: string, file: string, patch: { name?: string; note?: string }): UserAsset { return updateAsset(this.projectDir(id), file, patch); }
+  /** the picture, its small copy and its entry */
+  removeAsset(id: string, file: string): void { removeAsset(this.projectDir(id), file); }
+  /** a project's folder, after checking it is one */
+  private projectDir(id: string) {
+    try { if (/^[\w-]+$/.test(id)) { this.store.read(id); return this.store.dir(id); } } catch {}
+    throw new Error(tr('项目不存在', 'Project not found'));
+  }
 
   /** replay events after `since`, then stream live ones; returns the unsubscribe function */
   subscribe(id: string, since: number, fn: (e: LoggedEvent) => void): () => void { return this.store.runner(id).subscribe(fn, since); }

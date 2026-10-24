@@ -32,6 +32,7 @@ module.exports = {
         breathe: { '0%,100%': { opacity: '0.45' }, '50%': { opacity: '1' } },
         shimmer: { from: { backgroundPosition: '150% 0' }, to: { backgroundPosition: '-50% 0' } },
         halo: { '0%': { transform: 'scale(1)', opacity: '0.55' }, '100%': { transform: 'scale(1.9)', opacity: '0' } },
+        slide: { from: { opacity: '0', transform: 'translateX(28px)' }, to: { opacity: '1', transform: 'none' } },
       },
       animation: {
         rise: 'rise 320ms cubic-bezier(0.16,1,0.3,1) both',
@@ -40,6 +41,7 @@ module.exports = {
         breathe: 'breathe 1.8s ease-in-out infinite',
         shimmer: 'shimmer 2.2s linear infinite',
         halo: 'halo 1.6s cubic-bezier(0.16,1,0.3,1) infinite',
+        slide: 'slide 320ms cubic-bezier(0.16,1,0.3,1) both',
       },
     },
   },

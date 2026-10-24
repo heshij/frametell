@@ -8,3 +8,7 @@ export { tr, locale, systemLocale } from './i18n.js';
 /** the sample shipped with a built-in voice (no key needed to hear it) */
 export { bundledSample as voiceSample } from '@frametell/voice';
 export { COVER_IMAGE } from './runner.js';
+/** the user's pictures for a film (素材) */
+export { USER_ASSETS_DIR, type UserAsset, type UserAssetType } from '@frametell/agent';
+export { sniff, type NewUserAsset, type Sniffed } from './assets.js';
+export { sanitizeSvg, type CleanSvg } from './svg.js';

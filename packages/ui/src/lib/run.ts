@@ -151,7 +151,7 @@ function step(v: RunView, e: LoggedEvent): RunView {
     case 'agent': {
       const ev = e.event;
       // the film's components are written in the background while it is narrated: one line says how they stand (kit)
-      if (e.session === 'kit') return r;
+      if (e.session === 'kit' || e.session?.startsWith('kit-')) return r;
       const page = isPage(e.session) ? e.session.slice(5) : undefined;
       const who = (doing: string) => (page ? t('run.now.who', { page: pageName(page), doing }) : doing);
       if (ev.type === 'progress') {

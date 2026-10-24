@@ -8,16 +8,12 @@ import { editIn, writeIn } from './projectfs.js';
 import type { AgentRuntime } from './runtime/types.js';
 import type { StudioEvent } from './events.js';
 
-const KIT = `(function () {
-  const { Builder } = PV;
-  const B = Builder.prototype;
-  /** globe(x, y, r, o): a turning globe. o: { at } */
-  B.globe = function (x, y, r, o = {}) { return this.circle(x, y, r, o); };
-  /** flag(x, y, label, o): a pin with a label. o: { at } */
-  B.flag = function (x, y, label, o = {}) { return this.text(label, { x, y, ...o }); };
-})();
-`;
-const CHECK = "ENGINE.visual('kit', (P) => { P.globe(400, 400, 200, { at: P.c(0) }); P.flag(1200, 400, 'A', { at: P.c(1) }); });\n";
+/** each component as its own session writes it, and its lines on the check page */
+const PARTS: Record<string, { code: string; check: string }> = {
+  globe: { code: "(function () {\n  const B = PV.Builder.prototype;\n  /** globe(x, y, r, o): a turning globe. o: { at } */\n  B.globe = function (x, y, r, o = {}) { return this.circle(x, y, r, o); };\n})();\n", check: 'P.globe(400, 400, 200, { at: P.c(0) });' },
+  kettle: { code: "(function () {\n  const B = PV.Builder.prototype;\n  /** kettle(x, y, o): the red kettle. o: { at } */\n  B.kettle = function (x, y, o = {}) { return this.circle(x, y, 100, o); };\n})();\n", check: 'P.kettle(400, 400, { at: P.c(0) });' },
+  flag: { code: "(function () {\n  const B = PV.Builder.prototype;\n  /** flag(x, y, label, o): a pin with a label. o: { at } */\n  B.flag = function (x, y, label, o = {}) { return this.text(label, { x, y, ...o }); };\n})();\n", check: "P.flag(1200, 400, 'A', { at: P.c(1) });" },
+};
 const PAGE = "ENGINE.visual('p01', (P) => {\n  P.globe(960, 500, 300);\n});\n";
 const ids = Array.from({ length: 8 }, (_, i) => `p0${i + 1}`);
 const KIT_PLAN = [{ name: 'globe', what: 'a turning globe', pages: ids.slice(0, 4) }, { name: 'flag', what: 'a pin with a label', pages: ids.slice(2, 6) }];
@@ -30,12 +26,13 @@ function artist(systems: Record<string, string>, o: { writesKit?: boolean } = {}
     async open(s) {
       systems[s.name] = s.system;
       return { ref: s.name, close: async () => {}, send: async ({ text }: { text: string }) => {
-        if (s.name === 'kit') {
-          if (/^Check round/.test(text)) fs.appendFileSync(path.join(s.cwd, 'extras/film-kit.js'), '// changed\n');
-          else if (o.writesKit !== false && /Write extras\/film-kit\.js|film's own components/.test(text)) {
-            fs.mkdirSync(path.join(s.cwd, 'extras'), { recursive: true });
-            fs.writeFileSync(path.join(s.cwd, 'extras/film-kit.js'), KIT);
-            fs.writeFileSync(path.join(s.cwd, 'extras/kit-check.js'), CHECK);
+        if (s.name.startsWith('kit-')) {
+          const name = s.name.slice(4);
+          if (/^Check round/.test(text)) { if (/They may not be yours/.test(text) && !/throws/.test(text)) return { text: 'not mine', stopReason: 'done', usage: {}, answers: [] } as never; fs.appendFileSync(path.join(s.cwd, `extras/kit/${name}.js`), '// changed\n'); }
+          else if (o.writesKit !== false && /film's own components|Write both/.test(text)) {
+            fs.mkdirSync(path.join(s.cwd, 'extras/kit'), { recursive: true });
+            fs.writeFileSync(path.join(s.cwd, `extras/kit/${name}.js`), PARTS[name].code);
+            fs.writeFileSync(path.join(s.cwd, `extras/kit/${name}.check.js`), PARTS[name].check);
           }
         } else if (s.name.startsWith('page-')) {
           const id = s.name.slice(5);
@@ -93,7 +90,8 @@ test('a designed style\'s film of eight pages writes its components first, and e
   const f = film();
   await f.d.kit();
   assert.deepEqual(f.d.state.kit, { status: 'done', components: ['globe', 'flag'] });
-  assert.match(f.systems.kit, /This film's style card/);
+  assert.match(f.systems['kit-globe'], /This film's style card/);
+  assert.ok(f.systems['kit-flag'], 'each component has a session of its own');
   assert.ok(f.events.some((e) => e.type === 'kit' && e.status === 'done'));
   await f.d.pages();
   // the pages load it (META.extras) and are told about it, first
@@ -128,12 +126,19 @@ test('a component the check fails is kept out; the others are given to the pages
   assert.match(f.checked[2], /\/\/ changed\n\/\/ changed/);
 });
 
-test('no kit for a short film, a style with its own look, or a storyboard that lists none', async () => {
-  for (const o of [{ pages: 7 }, { designed: false }, { kit: [] }]) {
+test('a short film in a style with its own look gets its kit too: the pages are drawn apart, the kettle must match', async () => {
+  const f = film({ pages: 3, designed: false, kit: [{ name: 'kettle', what: 'a red electric kettle', pages: ['p01', 'p02', 'p03'] }] });
+  await f.d.kit();
+  assert.equal(f.d.state.kit?.status, 'done');
+  assert.doesNotMatch(f.systems['kit-kettle'], /This film's style card/);
+});
+
+test('no kit for a one-page film or a storyboard that lists none', async () => {
+  for (const o of [{ pages: 1, kit: [{ name: 'globe', what: 'g', pages: ['p01'] }] }, { kit: [] }]) {
     const f = film(o);
     await f.d.kit();
     assert.deepEqual(f.d.state.kit, { status: 'none', components: [] }, JSON.stringify(o));
-    assert.equal(f.systems.kit, undefined);
+    assert.ok(!Object.keys(f.systems).some((n) => n.startsWith('kit')));
   }
 });
 
@@ -151,7 +156,7 @@ test('a kit that throws goes back to its session with the error, and is kept onc
   const asked: string[] = [];
   const runtime = (f.d as unknown as { o: { pages: { runtime: AgentRuntime } } }).o.pages.runtime;
   const open = runtime.open.bind(runtime);
-  runtime.open = async (s, resume) => { const x = await open(s, resume); const send = x.send; return { ...x, send: async (m: { text: string }) => { if (s.name === 'kit') asked.push(m.text); return send(m as never); } }; };
+  runtime.open = async (s, resume) => { const x = await open(s, resume); const send = x.send; return { ...x, send: async (m: { text: string }) => { if (s.name.startsWith('kit-')) asked.push(m.text); return send(m as never); } }; };
   let round = 0;
   Object.assign(f.d, {
     checkKit: async (items: { name: string }[]) => {
@@ -162,6 +167,6 @@ test('a kit that throws goes back to its session with the error, and is kept onc
   });
   await f.d.kit();
   assert.equal(round, 2);
-  assert.match(asked[1], /throws when it runs[\s\S]*this\.nope is not a function/);
+  assert.equal(asked.filter((t) => /throws when it runs[\s\S]*this\.nope is not a function/.test(t)).length, 2, 'a crash goes to every component');
   assert.deepEqual(f.d.state.kit, { status: 'done', components: ['globe', 'flag'] });
 });

@@ -8,6 +8,14 @@ import type {
 export type { EnvCheck, LoggedEvent, ModelInfo, NewProjectInput, PageTiming, ProjectSummary, ProviderSpec, PublicSettings, SettingsPatch, StyleInfo, Timeline, UserRef, Voice, VoicesView };
 export type ProjectView = ProjectSummary & { previewBase: string };
 
+// The film's assets (素材): @frametell/agent's types, re-exported by the core (types only, erased from the bundle)
+import type { UserAsset, UserAssetType } from '@frametell/core';
+export type { UserAsset, UserAssetType };
+/** one of the account's assets in a host's library (Cloud 素材库); `url` and `thumb` are URLs */
+export interface LibraryAsset { id: string; name: string; note: string; type: UserAssetType; w: number; h: number; bytes: number; url: string; thumb: string; createdAt: string }
+/** an asset given with a new film */
+export interface NewAsset { file: File; thumb?: Blob; note?: string }
+
 export interface StudioClient {
   settings(): Promise<PublicSettings>;
   updateSettings(patch: SettingsPatch): Promise<PublicSettings>;
@@ -21,7 +29,8 @@ export interface StudioClient {
   addVoice?(input: { id: string; name?: string }): Promise<Voice>;
   projects(): Promise<ProjectView[]>;
   project(id: string): Promise<ProjectView>;
-  createProject(input: NewProjectInput, files: File[]): Promise<ProjectView>;
+  /** `assets`: pictures to be seen in the film (素材), each with its small copy, apart from the documents in `files` */
+  createProject(input: NewProjectInput, files: File[], assets?: NewAsset[]): Promise<ProjectView>;
   start(id: string): Promise<void>;
   approve(id: string, feedback?: string): Promise<boolean>;
   stop(id: string): Promise<void>;
@@ -38,6 +47,22 @@ export interface StudioClient {
   /** put one of them into the project, as attach does with an uploaded file; returns the reference to send with it.
    *  Without `asset`, the whole brand: its brief (assets/brand/brand.md) and every file, the reference naming the brief */
   attachFrom?(projectId: string, item: { brand: string; asset?: string }): Promise<UserRef>;
+  /** the film's assets (素材), as its manifest lists them */
+  assets(id: string): Promise<UserAsset[]>;
+  /** add a picture to the film's assets (the same picture again: that one, its name and note updated); `thumb` its small copy */
+  addAsset(id: string, file: File, o?: { name?: string; note?: string; thumb?: Blob }): Promise<UserAsset>;
+  updateAsset(id: string, file: string, patch: { name?: string; note?: string }): Promise<UserAsset>;
+  /** the file, its small copy and its entry */
+  removeAsset(id: string, file: string): Promise<void>;
+  /** a host's account-wide library (Cloud 素材库); absent where there is none */
+  assetLibrary?: {
+    list(): Promise<LibraryAsset[]>;
+    add(file: File, o?: { name?: string; note?: string; thumb?: Blob }): Promise<LibraryAsset>;
+    update(id: string, patch: { name?: string; note?: string }): Promise<LibraryAsset>;
+    remove(id: string): Promise<void>;
+    /** copy one into a film */
+    use(projectId: string, id: string): Promise<UserAsset>;
+  };
   /** pages with their narration lines and times; null until the script exists */
   timeline(id: string): Promise<Timeline | null>;
   /** full-resolution frames of the film at `times`, as project-relative paths (from the mp4 when current, else live) */
@@ -80,6 +105,9 @@ export interface Hosted {
      * what the film cost the service in US dollars, given only to its admins, to trace costs */
     spent?(project: string): Promise<{ spent: number; goAhead?: number; cost?: number } | null>;
   };
+  /** what the person does in the workbench (lib/track.ts): a short name and a few small plain fields, never what was
+   *  typed; absent: nothing is told to anyone */
+  track?(name: string, props: Record<string, string | number | boolean>): void;
 }
 
 /** what a hosted service refused for want of credits: a failed call carries `credits` (what it needed, what was there) */
@@ -87,6 +115,9 @@ export function shortOf(e: unknown): { needed: number; available: number } | und
   const c = (e as { credits?: { needed?: unknown; available?: unknown } } | null)?.credits;
   return c && typeof c.needed === 'number' && typeof c.available === 'number' ? { needed: c.needed, available: c.available } : undefined;
 }
+
+/** a small copy's extension, from its type (a browser without a WebP encoder makes a PNG) */
+const thumbExt = (b: Blob) => (b.type === 'image/png' ? 'png' : b.type === 'image/jpeg' ? 'jpg' : 'webp');
 
 class HttpError extends Error { constructor(msg: string, readonly status: number) { super(msg); } }
 
@@ -111,10 +142,16 @@ export const httpClient: StudioClient = {
   addVoice: (input) => call('POST', '/api/voices', input),
   projects: () => call('GET', '/api/projects'),
   project: (id) => call('GET', `/api/projects/${id}`),
-  createProject: (input, files) => {
+  createProject: (input, files, assets) => {
     const form = new FormData();
     form.set('input', JSON.stringify(input));
     for (const f of files) form.append('materials', f, f.name);
+    // each picture's small copy and note, matched to it by position: an empty part where it has none (an SVG's copy)
+    for (const a of assets ?? []) {
+      form.append('assets', a.file, a.file.name);
+      form.append('assetThumbs', a.thumb ?? new Blob([]), a.thumb ? `thumb.${thumbExt(a.thumb)}` : 'none');
+      form.append('assetNotes', a.note ?? '');
+    }
     return call('POST', '/api/projects', form);
   },
   start: async (id) => { await call('POST', `/api/projects/${id}/start`); },
@@ -128,6 +165,18 @@ export const httpClient: StudioClient = {
   setCoverImage: async (id, file) => { const f = new FormData(); f.append('file', file); return (await call<{ image: string }>('PUT', `/api/projects/${id}/cover/image`, f)).image; },
   frames: async (id, times) => (await call<{ paths: string[] }>('GET', `/api/projects/${id}/frames?t=${times.map((t) => t.toFixed(1)).join(',')}`)).paths,
   say: async (id, text, refs) => (await call<{ ok: boolean }>('POST', `/api/projects/${id}/say`, { text, refs })).ok,
+  // the manifest's list, or the manifest itself ({ assets })
+  assets: async (id) => { const r = await call<UserAsset[] | { assets: UserAsset[] }>('GET', `/api/projects/${id}/assets`); return Array.isArray(r) ? r : r.assets ?? []; },
+  addAsset: (id, file, o) => {
+    const f = new FormData();
+    f.append('file', file, file.name);
+    if (o?.thumb) f.append('thumb', o.thumb, `thumb.${thumbExt(o.thumb)}`);
+    if (o?.name) f.append('name', o.name);
+    if (o?.note) f.append('note', o.note);
+    return call<UserAsset>('POST', `/api/projects/${id}/assets`, f);
+  },
+  updateAsset: (id, file, patch) => call<UserAsset>('PATCH', `/api/projects/${id}/assets/${encodeURIComponent(file)}`, patch),
+  removeAsset: async (id, file) => { await call('DELETE', `/api/projects/${id}/assets/${encodeURIComponent(file)}`); },
   attach: async (id, file) => { const f = new FormData(); f.append('file', file); return call<UserRef>('POST', `/api/projects/${id}/attach`, f); },
   subscribe(id, since, onEvent, onState) {
     // A browser gives one host six connections, and each open stream holds one: a few Studio tabs left open would

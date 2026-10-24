@@ -2,7 +2,7 @@
 // film, an attached file); the director gets them as a block ahead of the message, with paths it can open itself.
 import fs from 'node:fs';
 import path from 'node:path';
-import type { UserRef } from '@frametell/agent';
+import { USER_ASSETS_DIR, type UserAsset, type UserRef } from '@frametell/agent';
 import { kindOf, prepareMaterials } from './materials.js';
 import { tr } from './i18n.js';
 
@@ -42,14 +42,20 @@ export function cleanRefs(refs: unknown): UserRef[] {
     if (x.kind === 'page') return typeof x.page === 'string';
     if (x.kind === 'line') return typeof x.page === 'string' && typeof x.text === 'string' && Number.isFinite(x.at);
     if (x.kind === 'frame') return typeof x.page === 'string' && typeof x.path === 'string' && safe(x.path) && Number.isFinite(x.at);
-    if (x.kind === 'file') return typeof x.path === 'string' && safe(x.path);
+    if (x.kind === 'file') {
+      if (typeof x.path !== 'string' || !safe(x.path)) return false;
+      if (x.asset === undefined) return true;
+      // one of the film's own pictures: a file right in assets/user/
+      return x.asset === false || (x.asset === true && path.posix.dirname(x.path) === USER_ASSETS_DIR);
+    }
     if (x.kind === 'voice') return (x.provider === 'volcengine' || x.provider === 'elevenlabs') && typeof x.id === 'string' && /^[\w.-]{1,120}$/.test(x.id) && typeof x.name === 'string';
     return false;
   });
 }
 
-/** the message as the director reads it: the references first, then what the user wrote */
-export function withRefs(text: string, refs: UserRef[]): string {
+/** the message as the director reads it: the references first, then what the user wrote. `assets`: the film's pictures
+ *  as its list is now, for a picture's size and note */
+export function withRefs(text: string, refs: UserRef[], assets: UserAsset[] = []): string {
   refs = refs.filter((r) => r.kind !== 'voice');   // the server switches the voice itself; the director needs no word of it
   if (!refs.length) return text;
   const lines = refs.map((r) => {
@@ -57,6 +63,11 @@ export function withRefs(text: string, refs: UserRef[]): string {
     if (r.kind === 'line') return `<line page="${esc(r.page)}" at="${mmss(r.at)}">${esc(r.text)}</line>`;
     if (r.kind === 'voice') return '';
     if (r.kind === 'frame') return `<frame page="${esc(r.page)}" at="${mmss(r.at)}" image="${esc(r.path)}">the film at this moment${r.text ? `, while the narration says “${esc(r.text)}”` : ''}; open the image with read</frame>`;
+    if (r.asset) {
+      const a = assets.find((x) => `${USER_ASSETS_DIR}/${x.file}` === r.path);
+      const size = a?.w && a.h ? ` w="${a.w}" h="${a.h}"` : '';
+      return `<asset path="${esc(r.path)}"${size}>${esc(a?.name || r.label)}${a?.note ? ` — ${esc(a.note)}` : ''}; the user wants this in the film: place it with P.img</asset>`;
+    }
     return `<file path="${esc(r.path)}"${r.image ? ' image="true"' : ''}>${esc(r.label)}${r.image ? '; open the image with read' : ''}</file>`;
   });
   return `<references>\nThe user is pointing at these (at = time in the film):\n${lines.join('\n')}\n</references>\n\n${text || 'Please look at the above.'}`;

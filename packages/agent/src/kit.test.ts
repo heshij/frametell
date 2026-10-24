@@ -34,23 +34,22 @@ test('the storyboard check says what is wrong with look.kit, and nothing when th
   assert.deepEqual(kitIssues({}, ids), []);
   assert.deepEqual(kitIssues({ kit: [{ name: 'globe', what: 'a globe', pages: ['p01', 'p02', 'p03'] }] }, ids), []);
   const issues = kitIssues({ kit: [
-    { name: 'globe', what: 'a globe', pages: ['p01', 'p02'] },
+    { name: 'globe', what: 'a globe', pages: ['p01'] },
     { name: 'text', what: 'x', pages: ['p01', 'p02', 'p03'] },
     { name: 'map', what: 'x', pages: ['p01', 'p02', 'p99'] },
     { name: 'x y', what: 'x', pages: [] },
   ] }, ids).join('\n');
-  assert.match(issues, /globe is on 2 pages/);
+  assert.match(issues, /globe is on 1 page:/);
   assert.match(issues, /already one of the engine's P\.text/);
   assert.match(issues, /does not have: p99/);
   assert.match(issues, /"x y" is not a component name/);
 });
 
-test('a kit is written for a designed style\'s film of eight pages or more, with two things or more that recur', () => {
-  const two = kitPlan({ kit: [{ name: 'globe', what: 'g', pages: ids.slice(0, 3) }, { name: 'flag', what: 'f', pages: ids.slice(0, 3) }] });
-  assert.equal(kitWanted(true, 8, two), true);
-  assert.equal(kitWanted(true, 7, two), false);
-  assert.equal(kitWanted(false, 40, two), false);
-  assert.equal(kitWanted(true, 40, two.slice(0, 1)), false);
+test('a kit is written for any film of more than one page with one thing or more that recurs', () => {
+  const one = kitPlan({ kit: [{ name: 'kettle', what: 'k', pages: ids.slice(0, 2) }] });
+  assert.equal(kitWanted(5, one), true);
+  assert.equal(kitWanted(1, one), false);
+  assert.equal(kitWanted(40, []), false);
 });
 
 const KIT = `/* a film's kit */

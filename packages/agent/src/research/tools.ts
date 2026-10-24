@@ -27,6 +27,8 @@ const SKIP = new Set(['node_modules', '.git', 'dist', 'build', 'out', '.next', '
 const BINARY = /\.(png|jpe?g|gif|webp|ico|bmp|pdf|zip|gz|tgz|bz2|xz|7z|rar|jar|exe|dll|so|dylib|bin|woff2?|ttf|otf|eot|mp3|mp4|mov|wav|ogg|webm|avi|psd|sketch|fig|sqlite|db|lock)$/i;
 const PAGE_CHUNK = 20_000;
 const FILE_CHUNK = 30_000;
+/** a longer line is read in rows of this many characters */
+const WRAP = 500;
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }], details: undefined });
 
@@ -103,10 +105,13 @@ export function researchTools(o: { mounts: Mount[]; web: Web; limits: Limits; si
     },
   };
 
-  const ReadP = Type.Object({ path: Type.String(), offset: Type.Optional(Type.Number({ description: 'first line, from 1' })), limit: Type.Optional(Type.Number({ description: 'how many lines, default 400' })) });
+  const ReadP = Type.Object({
+    path: Type.String(), offset: Type.Optional(Type.Number({ description: 'first line, from 1' })), limit: Type.Optional(Type.Number({ description: 'how many lines, default 400' })),
+    part: Type.Optional(Type.Number({ description: `for a line longer than ${WRAP} characters: which ${WRAP}-character part of the offset line to start from, as the reply says` })),
+  });
   const read: AgentTool<typeof ReadP> = {
     name: 'read_file', label: 'Read file',
-    description: 'Read a text file in a folder you were given, with line numbers. Long files come in parts: use offset/limit to read on.',
+    description: `Read a text file in a folder you were given, with line numbers. A line longer than ${WRAP} characters goes on in rows marked with its number and +. Long files come in parts: read on with the offset (and part) the reply gives.`,
     parameters: ReadP,
     execute: async (_id, p) => {
       gate();
@@ -114,10 +119,22 @@ export function researchTools(o: { mounts: Mount[]; web: Web; limits: Limits; si
       if (fs.statSync(abs).isDirectory()) throw new Error(`${p.path} is a folder: use list_files`);
       if (binary(abs)) return text(`${shown(mount, abs)} is not a text file (${fs.statSync(abs).size} bytes)`);
       const lines = fs.readFileSync(abs, 'utf8').split('\n');
-      const from = Math.max(0, (p.offset ?? 1) - 1), to = Math.min(lines.length, from + Math.min(Math.max(p.limit ?? 400, 1), 2000));
-      let out = lines.slice(from, to).map((l, i) => `${String(from + i + 1).padStart(5)}  ${l.length > 500 ? l.slice(0, 500) + '…' : l}`).join('\n');
-      if (out.length > FILE_CHUNK) out = out.slice(0, FILE_CHUNK) + '\n… (cut short)';
-      return text(out + (to < lines.length ? `\n… (${lines.length} lines in all; read on with offset ${to + 1})` : ''));
+      const from = Math.max(0, Math.floor(p.offset ?? 1) - 1), to = Math.min(lines.length, from + Math.min(Math.max(p.limit ?? 400, 1), 2000));
+      // nothing is ever dropped: a long line (a paragraph of a parsed PDF is one line) goes on in rows of WRAP
+      // characters, and a reply full before its lines are done says exactly where to read on, mid-line if need be
+      const rows: string[] = [];
+      let size = 0, next: { line: number; part: number } | undefined;
+      rows: for (let n = from; n < to; n++) {
+        const l = lines[n], parts = Math.max(1, Math.ceil(l.length / WRAP));
+        for (let k = n === from ? Math.min(Math.max(1, Math.floor(p.part ?? 1)), parts) : 1; k <= parts; k++) {
+          const row = `${String(n + 1).padStart(5)}${k > 1 ? '+' : ' '} ${l.slice((k - 1) * WRAP, k * WRAP)}`;
+          if (rows.length && size + row.length + 1 > FILE_CHUNK) { next = { line: n + 1, part: k }; break rows; }
+          rows.push(row); size += row.length + 1;
+        }
+      }
+      const more = next ? `\n… (${lines.length} lines in all; read on with offset ${next.line}${next.part > 1 ? ` and part ${next.part}` : ''})`
+        : to < lines.length ? `\n… (${lines.length} lines in all; read on with offset ${to + 1})` : '';
+      return text(rows.join('\n') + more);
     },
   };
 

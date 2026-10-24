@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { ArrowRight, ChevronDown, FileText, Globe, Image as ImageIcon, Loader2, NotebookPen, Paperclip, Settings2, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ArrowRight, ChevronDown, FileText, Globe, Loader2, NotebookPen, Paperclip, Settings2, X } from 'lucide-react';
 import { client, hosted, type PublicSettings } from '../lib/client';
 import { go, useLoad, useVoices } from '../lib/hooks';
 import { STYLE_SWATCH, styleLabel } from '../lib/styles';
@@ -9,10 +9,13 @@ import { ModelPicker } from '../components/ModelPicker';
 import { ProjectList } from '../components/ProjectList';
 import { StylePicker } from '../components/StylePicker';
 import { VoicePicker } from '../components/VoicePicker';
+import { AssetStrip, prepareAssets, type PendingAsset } from './Assets';
+import { ASSET_ACCEPT, ASSET_MAX_COUNT, isAssetFile, refuse } from '../lib/assets';
 
 const DURATIONS = [60, 120, 300, 600];
-const ACCEPT = '.md,.markdown,.txt,.pdf,.docx,.pptx,.epub,.png,.jpg,.jpeg,.webp';
-const READABLE = /\.(md|markdown|txt|pdf|docx|pptx|epub|png|jpe?g|webp)$/i;
+// documents for the director to read; pictures to be seen in the film are assets (素材), in a strip of their own
+const ACCEPT = '.md,.markdown,.txt,.pdf,.docx,.pptx,.epub';
+const READABLE = /\.(md|markdown|txt|pdf|docx|pptx|epub)$/i;
 
 const host = (u: string) => { try { return new URL(u).host; } catch { return u; } };
 
@@ -33,6 +36,10 @@ export function Home({ openSettings, prefsStamp }: { openSettings: (section?: st
   const settings = useLoad(() => client.settings(), [prefsStamp]);
 
   const [files, setFiles] = useState<File[]>([]);
+  const [assets, setAssets] = useState<PendingAsset[]>([]);
+  const assetsRef = useRef(assets); assetsRef.current = assets;
+  useEffect(() => () => { for (const a of assetsRef.current) if (a.preview) URL.revokeObjectURL(a.preview); }, []);
+  const assetInput = useRef<HTMLInputElement>(null);
   // ?topic= starts the box with an idea typed elsewhere (frametell.ai's landing page)
   const [topic, setTopic] = useState(() => new URLSearchParams(location.search).get('topic') || '');
   const [duration, setDuration] = useState(60);
@@ -78,18 +85,35 @@ export function Home({ openSettings, prefsStamp }: { openSettings: (section?: st
   const picked = voiceList.find((v) => v.id === voiceId);
   // a voice of a service with no key can be heard, not used: the film would come out silent
   const voiceNoKey = !!picked && voices.data?.configured[picked.provider] === false;
+  // pictures alone say what is seen, not what the film is about: a sentence or a document is still needed
   const hasInput = !!topic.trim() || files.length > 0;
+  const onlyAssets = !hasInput && assets.length > 0;
   // a hosted plan may draw in only some styles: the others show, marked, and say how to get them
   const lockedStyle = (id: string) => !!credits?.styles && !credits.styles.includes(id);
   const canSearch = !!settings.data?.search?.provider;
   const webOn = web ?? !files.length;
-  const ready = hasInput && !!modelId && !voiceNoKey && !busy && !lockedStyle(styleId);
+  // waits the moment it takes to make the assets' small copies
+  const ready = hasInput && !!modelId && !voiceNoKey && !busy && !lockedStyle(styleId) && assets.every((a) => a.preview);
+  /** documents become chips, pictures assets: whichever way they came in */
   const add = (list: FileList | null) => {
     if (!list) return;
-    const ok = [...list].filter((f) => READABLE.test(f.name));
-    setError(ok.length < list.length ? t('home.skipped') : undefined);
-    setFiles((cur) => [...cur, ...ok.filter((f) => !cur.some((c) => c.name === f.name && c.size === f.size))]);
+    const all = [...list];
+    const pics = all.filter(isAssetFile), docs = all.filter((f) => !isAssetFile(f) && READABLE.test(f.name));
+    setError(docs.length + pics.length < all.length ? t('home.skipped') : undefined);
+    setFiles((cur) => [...cur, ...docs.filter((f) => !cur.some((c) => c.name === f.name && c.size === f.size))]);
+    if (pics.length) addAssets(pics);
   };
+  const addAssets = (list: File[]) => {
+    const cur = assetsRef.current;
+    const fresh = list.filter((f) => !cur.some((c) => c.file.name === f.name && c.file.size === f.size));
+    const bad = fresh.map((f) => [f, refuse(f)] as const).filter(([, why]) => why);
+    const ok = fresh.filter((f) => !refuse(f)).slice(0, Math.max(0, ASSET_MAX_COUNT - cur.length));
+    if (bad.length) setError(t(bad[0][1] === 'type' ? 'assets.refused.type' : 'assets.refused.size', { name: bad[0][0].name }));
+    else if (ok.length < fresh.length) setError(t('assets.refused.full', { n: ASSET_MAX_COUNT }));
+    const made = prepareAssets(ok, (a) => setAssets((c) => (c.some((x) => x.key === a.key) ? c.map((x) => (x.key === a.key ? a : x)) : (a.preview && URL.revokeObjectURL(a.preview), c))));
+    setAssets((c) => [...c, ...made]);
+  };
+  const removeAsset = (key: string) => setAssets((c) => { const a = c.find((x) => x.key === key); if (a?.preview) URL.revokeObjectURL(a.preview); return c.filter((x) => x.key !== key); });
 
   const start = async () => {
     if (!ready) return;
@@ -100,7 +124,8 @@ export function Home({ openSettings, prefsStamp }: { openSettings: (section?: st
       if (!hosted && (modelId !== settings.data?.defaults.model || (pagesOwn ? pagesId : '') !== (savedPages ?? ''))) {
         await client.updateSettings({ defaults: { model: modelId, pageModel: pagesOwn ? pagesId : '' } }).catch(() => {});
       }
-      const p = await client.createProject({ durationSec: duration, lang: filmLang, style: styleId, model: modelId, pageModel: pagesOwn ? pagesId : '', notes: topic.trim() || undefined, research: canSearch ? webOn : undefined, voice: v ? { provider: v.provider, id: v.id, name: v.name } : voiceId === null ? null : undefined }, files);
+      const p = await client.createProject({ durationSec: duration, lang: filmLang, style: styleId, model: modelId, pageModel: pagesOwn ? pagesId : '', notes: topic.trim() || undefined, research: canSearch ? webOn : undefined, voice: v ? { provider: v.provider, id: v.id, name: v.name } : voiceId === null ? null : undefined }, files,
+        assets.length ? assets.map((a) => ({ file: a.file, thumb: a.thumb })) : undefined);
       go(`#/p/${p.id}`);
     } catch (e) { setError((e as Error).message); setBusy(false); }
   };
@@ -112,7 +137,7 @@ export function Home({ openSettings, prefsStamp }: { openSettings: (section?: st
     if (!cur.includes(id)) await client.updateSettings({ models: { [provider]: [...cur, id] } });
     settings.reload(); models.reload();
   };
-  const hint = noModel ? null : !hasInput ? t('home.hintInput') : !modelId ? t('home.hintModel') : voiceNoKey ? t('home.hintVoiceKey') : null;
+  const hint = noModel ? null : onlyAssets ? t('assets.home.needTopic') : !hasInput ? t('home.hintInput') : !modelId ? t('home.hintModel') : voiceNoKey ? t('home.hintVoiceKey') : null;
 
   return (
     <main className="mx-auto w-full max-w-[880px] px-6 pb-24 pt-14 sm:pt-20">
@@ -133,7 +158,7 @@ export function Home({ openSettings, prefsStamp }: { openSettings: (section?: st
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {files.map((f) => (
               <span key={f.name + f.size} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-paper-2 pl-2.5 pr-1 text-[12.5px] text-ink-2">
-                {/\.(png|jpe?g|webp)$/i.test(f.name) ? <ImageIcon size={13} aria-hidden /> : <FileText size={13} aria-hidden />}
+                <FileText size={13} aria-hidden />
                 <span className="max-w-[220px] truncate">{f.name}</span>
                 <button className="fs-icon-btn h-6 w-6" onClick={() => setFiles((c) => c.filter((x) => x !== f))} aria-label={t('home.remove', { name: f.name })}><X size={12} /></button>
               </span>
@@ -149,6 +174,8 @@ export function Home({ openSettings, prefsStamp }: { openSettings: (section?: st
             {!files.length && <span className="text-[12px] text-ink-3">{t(hosted ? 'home.formatsHosted' : 'home.formats')}</span>}
           </div>
           <input ref={input} type="file" multiple accept={ACCEPT} className="sr-only" aria-label={t('home.chooseFiles')} onChange={(e) => { add(e.target.files); e.target.value = ''; }} />
+          <AssetStrip items={assets} onAdd={() => assetInput.current?.click()} onRemove={removeAsset} />
+          <input ref={assetInput} type="file" multiple accept={ASSET_ACCEPT} className="sr-only" tabIndex={-1} aria-label={t('assets.home.add')} onChange={(e) => { addAssets([...(e.target.files || [])]); e.target.value = ''; }} />
         </div>
 
         <div className="grid gap-x-6 gap-y-5 px-5 py-5 sm:grid-cols-2">
@@ -230,6 +257,7 @@ export function Home({ openSettings, prefsStamp }: { openSettings: (section?: st
             <p className="text-[12.5px] text-seal" role="alert">{error}</p>
           ) : hint ? (
             <p className="text-[12.5px] text-ink-3">{hint}</p>
+
           ) : credits && estimate > credits.available ? (
             <p className="text-[12.5px] text-seal" role="status">{t('home.short', { n: estimate.toLocaleString(intlTag()) })} <a className="underline underline-offset-2" href={credits.url} target="_top">{t('home.topUp')}</a></p>
           ) : (
